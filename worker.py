@@ -215,7 +215,7 @@ def update_contact_status(contact_id: str, status: str,final_status:str, submiss
 # --- Main exported function ---
 
 
-def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str, user_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,job, user_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Submit a contact form (standalone).
 
     form_data: expects keys like `form_url`, optional `field_mapping`, and optional `id`/`contact_id` to update DB.
@@ -409,7 +409,12 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str, u
                 logger.info(f"Form Not found - - - - : {result}")
                 submission_time = datetime.utcnow()
                 if contact_id:
-                    update_contact_status(contact_id, 'FORM NOT FOUND','FORM NOT FOUND', submission_time)
+                    # update_contact_status(contact_id, 'FORM NOT FOUND','FORM NOT FOUND', submission_time)
+                    update_aws_job_metadata(
+                        job['id'],
+                        status="FORM NOT FOUND",
+                        completed=True
+                    )
 
                 return result
 
@@ -948,14 +953,24 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str, u
             logger.info(f"All Form Submitted - - - - : {result}")
             submission_time = datetime.utcnow()
             if contact_id:
-                update_contact_status(contact_id, 'COMPLETED','DONE', submission_time)
+                # update_contact_status(contact_id, 'COMPLETED','DONE', submission_time)
+                update_aws_job_metadata(
+                    job['id'],
+                    status="COMPLETED",
+                    completed=True
+                )
 
             return result
 
         except Exception as e:
             logger.error(f"Selenium submission error: {e}")
             submission_time = datetime.utcnow()
-            update_contact_status(contact_id, 'FAILED','FAILED', submission_time)
+            # update_contact_status(contact_id, 'FAILED','FAILED', submission_time)
+            update_aws_job_metadata(
+                job['id'],
+                status="FAILED",
+                completed=True
+            )
             return {
                 'success': False,
                 'error': f'Selenium failed: {e}.  submission not done no result.',
@@ -1268,21 +1283,103 @@ def try_lock_job(contact_id):
     from psycopg2.extras import RealDictCursor
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
+    # cur.execute("""
+    #     UPDATE contact_urls
+    #     SET form_status='PROCESSING',
+    #         worker_id=%s,
+    #         0=NOW()
+    #     WHERE id=%s
+    #       AND form_status='PENDING'
+    #       AND retry_count < %s
+    #     RETURNING *;
+    # """, (WORKER_ID, contact_id, MAX_RETRIES))
     cur.execute("""
-        UPDATE contact_urls
-        SET form_status='PROCESSING',
-            worker_id=%s,
-            locked_at=NOW()
-        WHERE id=%s
-          AND form_status='PENDING'
-          AND retry_count < %s
-        RETURNING *;
-    """, (WORKER_ID, contact_id, MAX_RETRIES))
+               UPDATE contact_urls
+               SET form_status = 'PROCESSING',
+                   worker_id = %s,
+                   locked_at = NOW()
+               WHERE id = (
+                   SELECT id
+                   FROM contact_urls
+                   WHERE form_status = 'PENDING'
+                   ORDER BY created_at ASC
+                   LIMIT 1
+                   FOR UPDATE SKIP LOCKED
+               )
+               RETURNING *;
+           """, (WORKER_ID,))
 
     row = cur.fetchone()
     conn.commit()
     conn.close()
     return dict(row) if row else None
+
+def get_instance_private_ip():
+    try:
+        r = requests.get(
+            "http://169.254.169.254/latest/meta-data/local-ipv4",
+            timeout=1
+        )
+        return r.text
+    except Exception:
+        return "unknown"
+def update_aws_job_metadata(
+    contact_id,
+    message_id=None,
+    receipt_handle=None,
+    status=None,
+    started=False,
+    completed=False
+):
+    conn = _get_db_conn()
+    if not conn:
+        return
+
+    fields = []
+    values = []
+    INSTANCE_PRIVATE_IP = get_instance_private_ip()
+    if message_id:
+        fields.append("sqs_message_id=%s")
+        values.append(message_id)
+
+    if receipt_handle:
+        fields.append("sqs_receipt_handle=%s")
+        values.append(receipt_handle)
+
+    if status:
+        fields.append("form_status=%s")
+        values.append(status)
+
+    if status:
+        fields.append("status=%s")
+        values.append(status)
+
+    if started:
+        fields.append("worker_started_at=NOW()")
+
+    if completed:
+        fields.append("worker_completed_at=NOW()")
+        fields.append("submission_time=NOW()")
+
+    fields.extend([
+        "sqs_queue_url=%s",
+        "aws_region=%s",
+        "worker_instance_ip=%s"
+    ])
+
+    values.extend([QUEUE_URL, AWS_REGION, INSTANCE_PRIVATE_IP])
+
+    sql = f"""
+        UPDATE contact_urls
+        SET {", ".join(fields)}, updated_at=NOW()
+        WHERE id=%s
+    """
+    values.append(contact_id)
+
+    cur = conn.cursor()
+    cur.execute(sql, values)
+    conn.commit()
+    conn.close()
 if __name__ == '__main__':
     # limit = int(os.getenv('PENDING_LIMIT', '50'))
     # out = process_pending_forms(limit)
@@ -1299,21 +1396,38 @@ if __name__ == '__main__':
             WaitTimeSeconds=20,
             VisibilityTimeout=VISIBILITY_TIMEOUT
         )
+        # #for tests
+        # resp={"Messages":['1']}
+        # msg={}
+        # resp["Messages"][0]="1"
+        # msg["ReceiptHandle"]="11"
+        # msg["MessageId"]="11"
 
         if "Messages" not in resp:
             continue
 
         msg = resp["Messages"][0]
         receipt = msg["ReceiptHandle"]
+        message_id = msg.get("MessageId")
 
         try:
             body = json.loads(msg["Body"])
             contact_id = body["job_id"]
+            # body = ""
+            # contact_id =""
         except Exception:
             sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
             continue
 
         job = try_lock_job(contact_id)
+        if job:
+            update_aws_job_metadata(
+                job['id'],
+                message_id=message_id,
+                receipt_handle=receipt,
+                status="PROCESSING",
+                started=True
+            )
 
         # Already processed / taken by another worker
         if not job:
@@ -1338,9 +1452,14 @@ if __name__ == '__main__':
                 'campaign_name': job.get('campaign_name')
             }
 
-            submit_contact_form_old(form_data, job.get('personalized_message'))
+            submit_contact_form_old(form_data, job.get('personalized_message'),job)
 
-            mark_done(job['id'])
+            # mark_done(job['id'])
+            # update_aws_job_metadata(
+            #     job['id'],
+            #     status="DONE",
+            #     completed=True
+            # )
             sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
 
         except Exception as e:
