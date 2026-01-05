@@ -178,6 +178,7 @@ def build_form_payload_from_row(row: Dict[str, Any], generated_message: str) -> 
 
 def _get_db_conn():
     if not PSYCOPG2_AVAILABLE:
+        logger.warning(f"PSYCOPG2_not AVAILABLE: ")
         return None
     database_url = "postgresql://ai_messaging:e38ByBE7DN54YKXS@103.215.159.51:5432/ai_messaging"
     # database_url = os.getenv('DATABASE_URL')
@@ -278,7 +279,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             # driver = webdriver.Chrome(options=chrome_options)
             from selenium.webdriver.chrome.service import Service
             from webdriver_manager.chrome import ChromeDriverManager
-
+            logger.info(f"Going TO opend Driver : {form_data['form_url']}")
             driver = webdriver.Chrome(
                 service=Service(ChromeDriverManager().install()),
                 options=chrome_options
@@ -410,6 +411,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             # }
 
             print(data, "filling this - - - -")
+            logger.info(f"filling this - - - - : {data}")
 
             try:
                 elements = driver.find_elements(By.XPATH, "//input|//textarea|//select")
@@ -1280,26 +1282,32 @@ def mark_done(contact_id):
 
 
 def recover_stuck_jobs():
-    conn = _get_db_conn()
-    if not conn:
-        return
-    cur = conn.cursor()
-    cur.execute("""
-        UPDATE contact_urls
-        SET form_status='PENDING',
-            worker_id=NULL,
-            locked_at=NULL,
-            retry_count = retry_count + 1
-        WHERE form_status='PROCESSING'
-          AND locked_at < NOW() - INTERVAL '%s minutes'
-          AND retry_count < %s;
-    """, (LOCK_TIMEOUT_MINUTES, MAX_RETRIES))
-    conn.commit()
-    conn.close()
+    try:
+        logger.info(f"Database connectionss: ")
+        conn = _get_db_conn()
+        if not conn:
+            return
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE contact_urls
+            SET form_status='PENDING',
+                worker_id=NULL,
+                locked_at=NULL,
+                retry_count = retry_count + 1
+            WHERE form_status='PROCESSING'
+              AND locked_at < NOW() - INTERVAL '%s minutes'
+              AND retry_count < %s;
+        """, (LOCK_TIMEOUT_MINUTES, MAX_RETRIES))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.info(f"Error in recover_stuck_jobs: {e}")
 
 
 def try_lock_job(contact_id):
+    logger.info(f"Going for connection: {contact_id}")
     conn = _get_db_conn()
+
     if not conn:
         return None
 
@@ -1335,6 +1343,7 @@ def try_lock_job(contact_id):
     row = cur.fetchone()
     conn.commit()
     conn.close()
+    logger.info(f"contact_urls Updated to Pending: {row}")
     return dict(row) if row else None
 
 def get_instance_private_ip():
@@ -1343,7 +1352,9 @@ def get_instance_private_ip():
             "http://169.254.169.254/latest/meta-data/local-ipv4",
             timeout=1
         )
+        logger.info(f"IP Details: {r.text}")
         return r.text
+
     except Exception:
         return "unknown"
 def update_aws_job_metadata(
@@ -1390,6 +1401,8 @@ def update_aws_job_metadata(
         "worker_instance_ip=%s"
     ])
 
+    logger.info(f"Field details to updated DB : {contact_id}")
+
     values.extend([QUEUE_URL, AWS_REGION, INSTANCE_PRIVATE_IP])
 
     sql = f"""
@@ -1410,85 +1423,92 @@ if __name__ == '__main__':
 
     logger.info(f"SQS Worker started: {WORKER_ID}")
 
-    recover_stuck_jobs()
+    # recover_stuck_jobs()
+    logger.info(f"Going for sqs message - - - - ")
 
-    while not SHUTDOWN:
-        resp = sqs.receive_message(
-            QueueUrl=QUEUE_URL,
-            MaxNumberOfMessages=1,
-            WaitTimeSeconds=20,
-            VisibilityTimeout=VISIBILITY_TIMEOUT
-        )
-        #for tests
-        # resp={"Messages":['1']}
-        # msg={}
-        # resp["Messages"][0]="1"
-        # msg["ReceiptHandle"]="11"
-        # msg["MessageId"]="11"
+    try:
 
-        if "Messages" not in resp:
-            continue
-
-        msg = resp["Messages"][0]
-        receipt = msg["ReceiptHandle"]
-        message_id = msg.get("MessageId")
-
-        try:
-            body = json.loads(msg["Body"])
-            contact_id = body["job_id"]
-            # body = ""
-            # contact_id =""
-        except Exception:
-            sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
-            continue
-
-        job = try_lock_job(contact_id)
-        if job:
-            update_aws_job_metadata(
-                job['id'],
-                message_id=message_id,
-                receipt_handle=receipt,
-                status="PROCESSING",
-                started=True
+        while not SHUTDOWN:
+            resp = sqs.receive_message(
+                QueueUrl=QUEUE_URL,
+                MaxNumberOfMessages=1,
+                WaitTimeSeconds=20,
+                VisibilityTimeout=VISIBILITY_TIMEOUT
             )
+            #for tests
+            # resp={"Messages":['1']}
+            # msg={}
+            # resp["Messages"][0]="1"
+            # msg["ReceiptHandle"]="11"
+            # msg["MessageId"]="11"
+            logger.info(f"SQS Worker started and details: {resp}")
 
-        # Already processed / taken by another worker
-        if not job:
-            sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
-            continue
+            if "Messages" not in resp:
+                continue
 
-        try:
-            form_url = job.get('contact_us_url') or job.get('form_url') or job.get('website_url')
+            msg = resp["Messages"][0]
+            receipt = msg["ReceiptHandle"]
+            message_id = msg.get("MessageId")
 
-            form_data = {
-                'id': job.get('id'),
-                'contact_id': job.get('id'),
-                'form_url': form_url,
-                'full_name': job.get('full_name'),
-                'first_name': job.get('first_name'),
-                'last_name': job.get('last_name'),
-                'company_name': job.get('company_name'),
-                'email_address': job.get('email_address'),
-                'phone_number': job.get('phone_number'),
-                'website_url': job.get('website_url'),
-                'personalized_message': job.get('personalized_message'),
-                'campaign_name': job.get('campaign_name')
-            }
+            try:
+                body = json.loads(msg["Body"])
+                contact_id = body["job_id"]
+                # body = ""
+                # contact_id =""
+            except Exception:
+                sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
+                logger.info(f"SQS Worker Deleted: {WORKER_ID}")
+                continue
 
-            submit_contact_form_old(form_data, job.get('personalized_message'),job)
+            job = try_lock_job(contact_id)
+            if job:
+                update_aws_job_metadata(
+                    job['id'],
+                    message_id=message_id,
+                    receipt_handle=receipt,
+                    status="PROCESSING",
+                    started=True
+                )
 
-            # mark_done(job['id'])
-            # update_aws_job_metadata(
-            #     job['id'],
-            #     status="DONE",
-            #     completed=True
-            # )
-            sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
+            # Already processed / taken by another worker
+            if not job:
+                sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
+                continue
 
-        except Exception as e:
-            logger.error(f"Job failed {job['id']}: {e}")
-            mark_failed(job['id'], str(e))
-            # ❌ Do NOT delete message → SQS retry
+            try:
+                form_url = job.get('contact_us_url') or job.get('form_url') or job.get('website_url')
 
-    logger.info("Worker exiting cleanly")
-    sys.exit(0)
+                form_data = {
+                    'id': job.get('id'),
+                    'contact_id': job.get('id'),
+                    'form_url': form_url,
+                    'full_name': job.get('full_name'),
+                    'first_name': job.get('first_name'),
+                    'last_name': job.get('last_name'),
+                    'company_name': job.get('company_name'),
+                    'email_address': job.get('email_address'),
+                    'phone_number': job.get('phone_number'),
+                    'website_url': job.get('website_url'),
+                    'personalized_message': job.get('personalized_message'),
+                    'campaign_name': job.get('campaign_name')
+                }
+
+                submit_contact_form_old(form_data, job.get('personalized_message'),job)
+
+                # mark_done(job['id'])
+                # update_aws_job_metadata(
+                #     job['id'],
+                #     status="DONE",
+                #     completed=True
+                # )
+                sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
+
+            except Exception as e:
+                logger.error(f"Job failed {job['id']}: {e}")
+                mark_failed(job['id'], str(e))
+                # ❌ Do NOT delete message → SQS retry
+
+        logger.info("Worker exiting cleanly")
+        sys.exit(0)
+    except Exception as e:
+        logger.info(f"some thing wrong {e}")
