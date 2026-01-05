@@ -418,11 +418,20 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             except Exception:
                 elements = []
 
+            try:
+                main_field = driver.find_element(By.XPATH, field_mapping['name'])
+            except:
+                main_field=[]
+            try:
+                main_field2 = driver.find_element(By.XPATH, "//form")
+            except:
+                main_field2=[]
+
             submit_buttons = []
 
             first_radio_selected = False
 
-            if not elements:
+            if not elements and not main_field2 and not main_field:
                 result = {
                     'success': False,
                     'submission_time': datetime.now(),
@@ -1348,12 +1357,18 @@ def try_lock_job(contact_id):
 
 def get_instance_private_ip():
     try:
-        r = requests.get(
-            "http://169.254.169.254/latest/meta-data/local-ipv4",
-            timeout=1
-        )
-        logger.info(f"IP Details: {r.text}")
-        return r.text
+        import socket
+        # r = requests.get(
+        #     "http://169.254.169.254/latest/meta-data/local-ipv4",
+        #     timeout=1
+        # )
+        # logger.info(f"IP Details: {r.text}")
+        # return r.text
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
 
     except Exception:
         return "unknown"
