@@ -1442,110 +1442,114 @@ if __name__ == '__main__':
     logger.info(f"Going for sqs message - - - - ")
 
     try:
+        running=False
+        while not running:
 
-        while not SHUTDOWN:
-
-            resp = sqs.receive_message(
-                QueueUrl=QUEUE_URL,
-                MaxNumberOfMessages=1,
-                WaitTimeSeconds=20,
-                VisibilityTimeout=VISIBILITY_TIMEOUT
-            )
-            #for tests
-            # resp={}
-            # msg={}
-            # resp["Messages"][0]="1"
-            # msg["ReceiptHandle"]="11"
-            # msg["MessageId"]="11"
-            logger.info(f"SQS Worker started and details: {resp}")
             try:
-                logger.info(f"SQS Worker started and details: {resp.text}")
-            except:
-                pass
+                logger.info(f"Check for new sqs message - - - - ")
 
-            other_flag = False
-            if "Messages" not in resp:
-                other_flag=True
-                logger.info(f"Messages is not there:")
-                job = try_lock_job("temp12553")
-                sqs.send_message(
-                    QueueUrl=QUEUE_URL,
-                    MessageBody=json.dumps({"job_id": str(job["id"])})
-                )
-                time.sleep(2)
                 resp = sqs.receive_message(
                     QueueUrl=QUEUE_URL,
                     MaxNumberOfMessages=1,
                     WaitTimeSeconds=20,
                     VisibilityTimeout=VISIBILITY_TIMEOUT
                 )
+                #for tests
+                # resp={}
+                # msg={}
+                # resp["Messages"][0]="1"
+                # msg["ReceiptHandle"]="11"
+                # msg["MessageId"]="11"
+                logger.info(f"SQS Worker started and details: {resp}")
+                try:
+                    logger.info(f"SQS Worker started and details: {resp.text}")
+                except:
+                    pass
+
+                other_flag = False
+                if "Messages" not in resp:
+                    other_flag=True
+                    logger.info(f"Messages is not there:")
+                    job = try_lock_job("temp12553")
+                    sqs.send_message(
+                        QueueUrl=QUEUE_URL,
+                        MessageBody=json.dumps({"job_id": str(job["id"])})
+                    )
+                    time.sleep(2)
+                    resp = sqs.receive_message(
+                        QueueUrl=QUEUE_URL,
+                        MaxNumberOfMessages=1,
+                        WaitTimeSeconds=20,
+                        VisibilityTimeout=VISIBILITY_TIMEOUT
+                    )
 
 
 
-            msg = resp["Messages"][0]
-            receipt = msg["ReceiptHandle"]
-            message_id = msg.get("MessageId")
+                msg = resp["Messages"][0]
+                receipt = msg["ReceiptHandle"]
+                message_id = msg.get("MessageId")
 
-            try:
-                body = json.loads(msg["Body"])
-                contact_id = body["job_id"]
-                # body = ""
-                # contact_id =""
-            except Exception:
-                sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
-                logger.info(f"SQS Worker Deleted: {WORKER_ID}")
-                continue
+                try:
+                    body = json.loads(msg["Body"])
+                    contact_id = body["job_id"]
+                    # body = ""
+                    # contact_id =""
+                except Exception:
+                    sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
+                    logger.info(f"SQS Worker Deleted: {WORKER_ID}")
+                    continue
 
-            if not other_flag:
-                job = try_lock_job(contact_id)
-            if job:
-                update_aws_job_metadata(
-                    job['id'],
-                    message_id=message_id,
-                    receipt_handle=receipt,
-                    status="PROCESSING",
-                    started=True
-                )
+                if not other_flag:
+                    job = try_lock_job(contact_id)
+                if job:
+                    update_aws_job_metadata(
+                        job['id'],
+                        message_id=message_id,
+                        receipt_handle=receipt,
+                        status="PROCESSING",
+                        started=True
+                    )
 
-            # Already processed / taken by another worker
-            if not job:
-                sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
-                continue
+                # Already processed / taken by another worker
+                if not job:
+                    sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
+                    continue
 
-            try:
-                form_url = job.get('contact_us_url') or job.get('form_url') or job.get('website_url')
+                try:
+                    form_url = job.get('contact_us_url') or job.get('form_url') or job.get('website_url')
 
-                form_data = {
-                    'id': job.get('id'),
-                    'contact_id': job.get('id'),
-                    'form_url': form_url,
-                    'full_name': job.get('full_name'),
-                    'first_name': job.get('first_name'),
-                    'last_name': job.get('last_name'),
-                    'company_name': job.get('company_name'),
-                    'email_address': job.get('email_address'),
-                    'phone_number': job.get('phone_number'),
-                    'website_url': job.get('website_url'),
-                    'personalized_message': job.get('personalized_message'),
-                    'campaign_name': job.get('campaign_name')
-                }
+                    form_data = {
+                        'id': job.get('id'),
+                        'contact_id': job.get('id'),
+                        'form_url': form_url,
+                        'full_name': job.get('full_name'),
+                        'first_name': job.get('first_name'),
+                        'last_name': job.get('last_name'),
+                        'company_name': job.get('company_name'),
+                        'email_address': job.get('email_address'),
+                        'phone_number': job.get('phone_number'),
+                        'website_url': job.get('website_url'),
+                        'personalized_message': job.get('personalized_message'),
+                        'campaign_name': job.get('campaign_name')
+                    }
 
-                submit_contact_form_old(form_data, job.get('personalized_message'),job)
+                    submit_contact_form_old(form_data, job.get('personalized_message'),job)
 
-                # mark_done(job['id'])
-                # update_aws_job_metadata(
-                #     job['id'],
-                #     status="DONE",
-                #     completed=True
-                # )
-                sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
+                    # mark_done(job['id'])
+                    # update_aws_job_metadata(
+                    #     job['id'],
+                    #     status="DONE",
+                    #     completed=True
+                    # )
+                    sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt)
 
+                except Exception as e:
+                    logger.error(f"Job failed {job['id']}: {e}")
+                    mark_failed(job['id'], str(e))
+                    # ❌ Do NOT delete message → SQS retry
             except Exception as e:
-                logger.error(f"Job failed {job['id']}: {e}")
-                mark_failed(job['id'], str(e))
-                # ❌ Do NOT delete message → SQS retry
-
+                logger.info(f"Something went wrong -- - - - {e}")
         logger.info("Worker exiting cleanly")
-        sys.exit(0)
+        # sys.exit(0)
     except Exception as e:
         logger.info(f"some thing wrong {e}")
