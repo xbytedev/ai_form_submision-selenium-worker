@@ -1305,7 +1305,7 @@ def recover_stuck_jobs():
 
 
 def try_lock_job(contact_id):
-    logger.info(f"Going for connection: {contact_id}")
+    logger.info(f"Going for connection:")
     conn = _get_db_conn()
 
     if not conn:
@@ -1429,6 +1429,7 @@ if __name__ == '__main__':
     try:
 
         while not SHUTDOWN:
+
             resp = sqs.receive_message(
                 QueueUrl=QUEUE_URL,
                 MaxNumberOfMessages=1,
@@ -1436,7 +1437,7 @@ if __name__ == '__main__':
                 VisibilityTimeout=VISIBILITY_TIMEOUT
             )
             #for tests
-            # resp={"Messages":['1']}
+            # resp={}
             # msg={}
             # resp["Messages"][0]="1"
             # msg["ReceiptHandle"]="11"
@@ -1447,10 +1448,24 @@ if __name__ == '__main__':
             except:
                 pass
 
-
+            other_flag = False
             if "Messages" not in resp:
+                other_flag=True
                 logger.info(f"Messages is not there:")
-                continue
+                job = try_lock_job("temp12553")
+                sqs.send_message(
+                    QueueUrl=QUEUE_URL,
+                    MessageBody=json.dumps({"job_id": str(job["id"])})
+                )
+                time.sleep(2)
+                resp = sqs.receive_message(
+                    QueueUrl=QUEUE_URL,
+                    MaxNumberOfMessages=1,
+                    WaitTimeSeconds=20,
+                    VisibilityTimeout=VISIBILITY_TIMEOUT
+                )
+
+
 
             msg = resp["Messages"][0]
             receipt = msg["ReceiptHandle"]
@@ -1466,7 +1481,8 @@ if __name__ == '__main__':
                 logger.info(f"SQS Worker Deleted: {WORKER_ID}")
                 continue
 
-            job = try_lock_job(contact_id)
+            if not other_flag:
+                job = try_lock_job(contact_id)
             if job:
                 update_aws_job_metadata(
                     job['id'],
