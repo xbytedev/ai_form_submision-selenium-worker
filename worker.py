@@ -1442,8 +1442,14 @@ if __name__ == '__main__':
             # msg["ReceiptHandle"]="11"
             # msg["MessageId"]="11"
             logger.info(f"SQS Worker started and details: {resp}")
+            try:
+                logger.info(f"SQS Worker started and details: {resp.text}")
+            except:
+                pass
+
 
             if "Messages" not in resp:
+                logger.info(f"Messages is not there:")
                 continue
 
             msg = resp["Messages"][0]
