@@ -1,3 +1,16 @@
+"""Self-contained standalone replica of `submit_contact_form_old`.
+
+No imports from the project; suitable to run independently.
+- Tries Selenium Chrome if available, otherwise falls back to HTTP POST via `requests`.
+- Updates `contact_urls` row using `psycopg2` when DB credentials are provided via env vars.
+
+Usage example:
+    from submit_contact_form_old_impl import submit_contact_form_old
+    result = submit_contact_form_old(form_data, generated_message)
+
+Environment variables used for DB (optional):
+- DATABASE_URL or DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+"""
 import logging
 import os
 import tempfile
@@ -111,21 +124,24 @@ def _setup_chrome_options():
     # options.add_argument('--headless')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
 
-    unique_id = str(uuid.uuid4())[:9]
-    timestamp = str(int(time.time() * 1000))
-    profile_dir = tempfile.mkdtemp(prefix=f'chrome_selenium_{unique_id}_{timestamp}_')
-    options.add_argument(f'--user-data-dir={profile_dir}')
+    # unique_id = str(uuid.uuid4())[:9]
+    # timestamp = str(int(time.time() * 1000))
+    # profile_dir = tempfile.mkdtemp(prefix=f'chrome_selenium_{unique_id}_{timestamp}_')
+    # options.add_argument(f'--user-data-dir={profile_dir}')
 
     # try common chrome binary locations
-    for path in ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/opt/google/chrome/google-chrome', '/usr/bin/chromium-browser']:
-        if os.path.exists(path):
-            options.binary_location = path
-            break
+    # for path in ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/opt/google/chrome/google-chrome', '/usr/bin/chromium-browser']:
+    #     if os.path.exists(path):
+    #         options.binary_location = path
+    #         break
 
     options.add_argument('--disable-gpu')
     options.add_argument('--disable-extensions')
-    return options, profile_dir
+    return options
 
 
 def generate_random_date_from_1995():
@@ -255,11 +271,18 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
 
     # Try Selenium-based submission first if available
     if SELENIUM_AVAILABLE:
-        chrome_options, chrome_profile_dir = _setup_chrome_options()
+        chrome_options = _setup_chrome_options()
         driver = None
         out = {"filled": {}, "submitted": False, "notes": []}
         try:
-            driver = webdriver.Chrome(options=chrome_options)
+            # driver = webdriver.Chrome(options=chrome_options)
+            from selenium.webdriver.chrome.service import Service
+            from webdriver_manager.chrome import ChromeDriverManager
+
+            driver = webdriver.Chrome(
+                service=Service(ChromeDriverManager().install()),
+                options=chrome_options
+            )
             driver.get(form_data['form_url'])
             time.sleep(3)
 
@@ -1396,7 +1419,7 @@ if __name__ == '__main__':
             WaitTimeSeconds=20,
             VisibilityTimeout=VISIBILITY_TIMEOUT
         )
-        # #for tests
+        #for tests
         # resp={"Messages":['1']}
         # msg={}
         # resp["Messages"][0]="1"
