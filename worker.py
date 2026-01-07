@@ -1341,13 +1341,13 @@ def try_lock_job(contact_id):
                WHERE id = (
                    SELECT id
                    FROM contact_urls
-                   WHERE form_status = 'PENDING'
+                   WHERE form_status = 'Queued' and id= %s
                    ORDER BY created_at ASC
                    LIMIT 1
                    FOR UPDATE SKIP LOCKED
                )
                RETURNING *;
-           """, (WORKER_ID,))
+           """, (WORKER_ID,contact_id,))
 
     row = cur.fetchone()
     conn.commit()
@@ -1444,7 +1444,7 @@ if __name__ == '__main__':
     try:
         running=False
         while not running:
-
+            # job = try_lock_job('15d64445-c8b7-4639-994d-865844fbcce9')
             try:
                 logger.info(f"Check for new sqs message - - - - ")
 
@@ -1466,22 +1466,22 @@ if __name__ == '__main__':
                 except:
                     pass
 
-                other_flag = False
                 if "Messages" not in resp:
-                    other_flag=True
-                    logger.info(f"Messages is not there:")
-                    job = try_lock_job("temp12553")
-                    sqs.send_message(
-                        QueueUrl=QUEUE_URL,
-                        MessageBody=json.dumps({"job_id": str(job["id"])})
-                    )
-                    time.sleep(2)
-                    resp = sqs.receive_message(
-                        QueueUrl=QUEUE_URL,
-                        MaxNumberOfMessages=1,
-                        WaitTimeSeconds=20,
-                        VisibilityTimeout=VISIBILITY_TIMEOUT
-                    )
+                    logger.info(f"Messages is not there: waiting for new message")
+                    time.sleep(5)
+                    continue
+                    # job = try_lock_job("temp12553")
+                    # sqs.send_message(
+                    #     QueueUrl=QUEUE_URL,
+                    #     MessageBody=json.dumps({"job_id": str(job["id"])})
+                    # )
+                    # time.sleep(2)
+                    # resp = sqs.receive_message(
+                    #     QueueUrl=QUEUE_URL,
+                    #     MaxNumberOfMessages=1,
+                    #     WaitTimeSeconds=20,
+                    #     VisibilityTimeout=VISIBILITY_TIMEOUT
+                    # )
 
 
 
@@ -1492,6 +1492,7 @@ if __name__ == '__main__':
                 try:
                     body = json.loads(msg["Body"])
                     contact_id = body["job_id"]
+                    logger.info(f"SQS Worker Processing for ID: {contact_id}")
                     # body = ""
                     # contact_id =""
                 except Exception:
@@ -1499,8 +1500,8 @@ if __name__ == '__main__':
                     logger.info(f"SQS Worker Deleted: {WORKER_ID}")
                     continue
 
-                if not other_flag:
-                    job = try_lock_job(contact_id)
+
+                job = try_lock_job(contact_id)
                 if job:
                     update_aws_job_metadata(
                         job['id'],
