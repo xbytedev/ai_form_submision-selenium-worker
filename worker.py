@@ -180,7 +180,7 @@ def _get_db_conn():
     if not PSYCOPG2_AVAILABLE:
         logger.warning(f"PSYCOPG2_not AVAILABLE: ")
         return None
-    database_url = "postgresql://ai_messaging:e38ByBE7DN54YKXS@103.215.159.51:5432/ai_messaging"
+    database_url = "postgresql://production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging"
     # database_url = os.getenv('DATABASE_URL')
     try:
         if database_url:
