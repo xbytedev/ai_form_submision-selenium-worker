@@ -944,7 +944,8 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                                                 driver.execute_script("document.querySelector('form').submit();")
                                                 print("submittintt through adavnce Done - - - -")
                                             except Exception as e:
-
+                                                e=f'Failed To submit Please verify...{form_data['form_url']} {str(e)}'
+                                                mark_failed(job['id'], str(e))
                                                 driver.quit()
                                                 logger.info(
                                                     f"DD &&&&& Failed To submit Please verify...{form_data['form_url']} {e}")
@@ -997,8 +998,11 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             return result
 
         except Exception as e:
-            logger.error(f"Selenium submission error: {e}")
             submission_time = datetime.utcnow()
+            logger.error(f"Selenium submission error: {e} {submission_time}")
+            e = f'Selenium submission error...{submission_time}{form_data['form_url']} {str(e)}'
+            mark_failed(job['id'], str(e))
+
             # update_contact_status(contact_id, 'FAILED','FAILED', submission_time)
             update_aws_job_metadata(
                 job['id'],
@@ -1018,12 +1022,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     driver.quit()
             except Exception:
                 pass
-            try:
-                import shutil
-                if chrome_profile_dir and os.path.exists(chrome_profile_dir):
-                    shutil.rmtree(chrome_profile_dir)
-            except Exception:
-                pass
+
 
     # --- Non-selenium fallback: simple HTTP POST ---
     # try:
