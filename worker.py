@@ -11,6 +11,18 @@ Usage example:
 Environment variables used for DB (optional):
 - DATABASE_URL or DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 """
+
+from datetime import timezone
+try:
+    import pytz
+    PYTZ_AVAILABLE = True
+except Exception:
+    PYTZ_AVAILABLE = False
+try:
+    from dateutil import parser as dateutil_parser
+    DATEUTIL_AVAILABLE = True
+except Exception:
+    DATEUTIL_AVAILABLE = False
 import logging
 import os
 import tempfile
@@ -28,6 +40,12 @@ MAX_RETRIES = 3
 import requests
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from urllib.parse import urljoin, urlparse
+try:
+    import lxml.html as lh
+    LXML_AVAILABLE = True
+except Exception:
+    LXML_AVAILABLE = False
 
 # Optional selenium usage
 try:
@@ -49,7 +67,7 @@ except Exception:
 logger = logging.getLogger("submit_contact_form_old_impl")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
-API_KEY_2CAPTCHA = os.getenv('74e14ac66f2725e34e5c65fafff03f18', None)
+API_KEY_2CAPTCHA = os.getenv('API_KEY_2CAPTCHA', None)
 
 FIELD_KEYWORDS = {
     "name": ["name", "full name", "fullname", "your-name", "contact-name", "first", "last", "first-name", "last-name"],
@@ -179,9 +197,8 @@ def build_form_payload_from_row(row: Dict[str, Any], generated_message: str) -> 
 def _get_db_conn():
     if not PSYCOPG2_AVAILABLE:
         logger.warning(f"PSYCOPG2_not AVAILABLE: ")
-        return None
-    database_url = "postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging"
-    # database_url = os.getenv('DATABASE_URL')
+        return None  
+    database_url = os.getenv('DATABASE_URL')
     try:
         if database_url:
             return psycopg2.connect(database_url)
@@ -944,7 +961,8 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                                                 driver.execute_script("document.querySelector('form').submit();")
                                                 print("submittintt through adavnce Done - - - -")
                                             except Exception as e:
-
+                                                e=f'Failed To submit Please verify...{form_data['form_url']} {str(e)}'
+                                                mark_failed(job['id'], str(e))
                                                 driver.quit()
                                                 logger.info(
                                                     f"DD &&&&& Failed To submit Please verify...{form_data['form_url']} {e}")
@@ -997,8 +1015,11 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             return result
 
         except Exception as e:
-            logger.error(f"Selenium submission error: {e}")
             submission_time = datetime.utcnow()
+            logger.error(f"Selenium submission error: {e} {submission_time}")
+            e = f'Selenium submission error...{submission_time}{form_data['form_url']} {str(e)}'
+            mark_failed(job['id'], str(e))
+
             # update_contact_status(contact_id, 'FAILED','FAILED', submission_time)
             update_aws_job_metadata(
                 job['id'],
@@ -1018,12 +1039,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     driver.quit()
             except Exception:
                 pass
-            try:
-                import shutil
-                if chrome_profile_dir and os.path.exists(chrome_profile_dir):
-                    shutil.rmtree(chrome_profile_dir)
-            except Exception:
-                pass
+
 
     # --- Non-selenium fallback: simple HTTP POST ---
     # try:
@@ -1227,7 +1243,7 @@ def thread_worker():
             logger.info("No pending jobs left")
             break
 
-        form_url = job.get('contact_us_url') or job.get('form_url') or job.get('website_url')
+        form_url = get_or_scrape_form_url(job) or job.get('form_url') or job.get('website_url')
 
         form_data = {
             'id': job.get('id'),
@@ -1311,6 +1327,35 @@ def recover_stuck_jobs():
         conn.close()
     except Exception as e:
         logger.info(f"Error in recover_stuck_jobs: {e}")
+
+
+def get_job_by_id(contact_id):
+    """Fetch a job row by id without locking."""
+    if not PSYCOPG2_AVAILABLE:
+        return None
+    conn = _get_db_conn()
+    if not conn:
+        return None
+    try:
+        from psycopg2.extras import RealDictCursor
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+    except Exception:
+        cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM contact_urls WHERE id = %s", (contact_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not row:
+            return None
+        return dict(row) if hasattr(row, 'keys') else dict(zip([c[0] for c in cur.description], row))
+    except Exception as e:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        logger.error(f"get_job_by_id failed: {e}")
+        return None
 
 
 def try_lock_job(contact_id):
@@ -1431,10 +1476,266 @@ def update_aws_job_metadata(
     cur.execute(sql, values)
     conn.commit()
     conn.close()
+
+
+def update_scraping_result(contact_id, found_url=None):
+    """Mark scraping as DONE and optionally update contact_us_url."""
+    conn = _get_db_conn()
+    if not conn:
+        return
+    try:
+        cur = conn.cursor()
+        if found_url:
+            cur.execute(
+                """
+                UPDATE contact_urls
+                SET contact_us_url = %s,
+                    scraping_status = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                (found_url, 'DONE', contact_id)
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE contact_urls
+                SET scraping_status = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                ('NOT FOUND', contact_id)
+            )
+        conn.commit()
+    except Exception as e:
+        logger.warning(f"Failed to update scraping_result for {contact_id}: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def find_contact_url_in_html(html, base_url):
+    """Try to find a contact page URL from HTML. Returns absolute URL or None."""
+    candidates = []
+    try:
+        if LXML_AVAILABLE:
+            doc = lh.fromstring(html)
+            # look for links with 'contact' in text or href
+            nodes = doc.xpath("//a[contains(translate(normalize-space(text()), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'contact')]")
+            for n in nodes:
+                href = n.get('href')
+                if href:
+                    candidates.append(href)
+            # links with 'contact' in href
+            nodes = doc.xpath("//a[contains(translate(@href, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'contact')]")
+            for n in nodes:
+                href = n.get('href')
+                if href:
+                    candidates.append(href)
+            # forms with action containing contact
+            nodes = doc.xpath("//form[contains(translate(@action,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'contact')]")
+            for n in nodes:
+                action = n.get('action')
+                if action:
+                    candidates.append(action)
+        else:
+            # fallback simple parse with string search
+            import re
+            for m in re.finditer(r"<a[^>]+href=[\'\"]([^\'\"]+)[\'\"][^>]*>(.*?)</a>", html, re.I|re.S):
+                href = m.group(1)
+                text = re.sub('<[^<]+?>', '', m.group(2) or '').strip().lower()
+                if 'contact' in (text or '') or 'contact' in href.lower():
+                    candidates.append(href)
+    except Exception as e:
+        logger.debug(f"HTML parse error when searching for contact url: {e}")
+
+    # normalize and filter candidates
+    seen = set()
+    for href in candidates:
+        try:
+            if href.startswith('javascript:') or href.startswith('#'):
+                continue
+            full = urljoin(base_url, href)
+            if full in seen:
+                continue
+            seen.add(full)
+            return full
+        except Exception:
+            continue
+    return None
+
+
+def validate_url(url):
+    """Check that URL returns a successful HTML response."""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (compatible; LinkChecker/1.0)'}
+        # some servers don't like HEAD; try GET
+        resp = requests.get(url, headers=headers, allow_redirects=True, timeout=30)
+        if resp.status_code and resp.text:
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def get_or_scrape_form_url(job):
+    """Return contact_us_url: existing value, or attempt to discover from website via HTTP then Selenium."""
+    existing = job.get('contact_us_url')
+    if existing:
+        return existing
+
+    website = job.get('website_url') or job.get('website')
+    if not website:
+        return None
+
+    # ensure scheme
+    if not urlparse(website).scheme:
+        website = 'http://' + website
+
+    found = None
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (compatible; ContactScraper/1.0)'}
+        resp = requests.get(website, headers=headers, timeout=30, allow_redirects=True)
+        if resp.status_code != 200 and resp.text:
+            found = find_contact_url_in_html(resp.text, resp.url)
+            if found and validate_url(found):
+                update_scraping_result(job.get('id'), found)
+                return found
+    except Exception as e:
+        logger.debug(f"HTTP scrape failed for {website}: {e}")
+
+    # Fallback to Selenium if available
+    if SELENIUM_AVAILABLE:
+        driver = None
+        try:
+            chrome_options = _setup_chrome_options()
+            from selenium.webdriver.chrome.service import Service
+            from webdriver_manager.chrome import ChromeDriverManager
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+            driver.get(website)
+            time.sleep(3)
+            html = driver.page_source
+            current_url = driver.current_url or website
+            found = find_contact_url_in_html(html, current_url)
+            if found and validate_url(found):
+                update_scraping_result(job.get('id'), found)
+                return found
+        except Exception as e:
+            logger.debug(f"Selenium scrape failed for {website}: {e}")
+        finally:
+            try:
+                if driver:
+                    driver.quit()
+            except Exception:
+                pass
+
+    # mark scraping done even if nothing found
+    update_scraping_result(job.get('id'), found)
+    return found
+
+def should_run_job(job_row):
+    """Return True if job should run based on scheduled_time and time_zone.
+
+    Behavior: get current server UTC time, convert to job's timezone, then compare
+    to scheduled_time (interpreted as local time in that timezone). If scheduled_time
+    is missing, return True.
+    """
+    if not job_row:
+        return True
+    sched = job_row.get('scheduled_time')
+    tz_name = job_row.get('time_zone') or job_row.get('timezone')
+    if not sched:
+        return True
+
+    # Parse scheduled_time if string
+    try:
+        if isinstance(sched, str):
+            if DATEUTIL_AVAILABLE:
+                scheduled_dt = dateutil_parser.parse(sched)
+            else:
+                # try ISO format
+                scheduled_dt = datetime.fromisoformat(sched)
+        elif isinstance(sched, datetime):
+            scheduled_dt = sched
+        else:
+            return True
+    except Exception as e:
+        logger.warning(f"Could not parse scheduled_time {sched}: {e}")
+        return True
+
+    # Determine timezone object
+    tz_obj = None
+    if tz_name:
+        try:
+            if PYTZ_AVAILABLE:
+                tz_obj = pytz.timezone(tz_name)
+            else:
+                from zoneinfo import ZoneInfo
+                tz_obj = ZoneInfo(tz_name)
+        except Exception as e:
+            logger.warning(f"Invalid timezone {tz_name}: {e}")
+            tz_obj = None
+
+    # Current server time in UTC
+    now_utc = datetime.now(timezone.utc)
+
+    # Convert now to target tz if available
+    if tz_obj:
+        try:
+            now_in_tz = now_utc.astimezone(tz_obj)
+        except Exception:
+            # pytz requires localize for naive scheduled dt; keep fallback
+            now_in_tz = now_utc
+    else:
+        now_in_tz = now_utc
+
+    # Normalize scheduled_dt: if naive, treat as local time in tz_obj
+    if scheduled_dt.tzinfo is None:
+        try:
+            if PYTZ_AVAILABLE and tz_obj:
+                scheduled_local = tz_obj.localize(scheduled_dt)
+            elif tz_obj:
+                scheduled_local = scheduled_dt.replace(tzinfo=tz_obj)
+            else:
+                # no tz info: assume UTC
+                scheduled_local = scheduled_dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            scheduled_local = scheduled_dt.replace(tzinfo=timezone.utc)
+    else:
+        scheduled_local = scheduled_dt
+
+    # Compare now_in_tz (converted) with scheduled_local also converted to same tz
+    try:
+        if tz_obj and scheduled_local.tzinfo is not None:
+            scheduled_in_tz = scheduled_local.astimezone(tz_obj)
+        elif tz_obj and scheduled_local.tzinfo is None:
+            if PYTZ_AVAILABLE:
+                scheduled_in_tz = tz_obj.localize(scheduled_local.replace(tzinfo=None))
+            else:
+                scheduled_in_tz = scheduled_local.replace(tzinfo=tz_obj)
+        else:
+            scheduled_in_tz = scheduled_local
+    except Exception:
+        scheduled_in_tz = scheduled_local
+
+    # finally compare: run if now_in_tz >= scheduled_in_tz
+    try:
+        run = now_in_tz >= scheduled_in_tz
+        if not run:
+            logger.info(f"Job {job_row.get('id')} scheduled for {scheduled_in_tz} in tz {tz_name}; current time {now_in_tz}; skipping.")
+        return run
+    except Exception as e:
+        logger.warning(f"Comparison failed: {e}")
+        return True
 if __name__ == '__main__':
-    # limit = int(os.getenv('PENDING_LIMIT', '50'))
-    # out = process_pending_forms(limit)
-    # logger.info(f"Processed {len(out)} pending forms")
+
+
+
+
+
+    #todo for production -----------
 
     logger.info(f"SQS Worker started: {WORKER_ID}")
 
@@ -1517,7 +1818,8 @@ if __name__ == '__main__':
                     continue
 
                 try:
-                    form_url = job.get('contact_us_url') or job.get('form_url') or job.get('website_url')
+                    scraped = get_or_scrape_form_url(job)
+                    form_url = scraped or job.get('contact_us_url') or job.get('form_url') or job.get('website_url')
 
                     form_data = {
                         'id': job.get('id'),
@@ -1554,3 +1856,49 @@ if __name__ == '__main__':
         # sys.exit(0)
     except Exception as e:
         logger.info(f"some thing wrong {e}")
+
+    # #todo Debug - - ----------------
+    # logger.info(f"SQS Worker started: {WORKER_ID}")
+    #
+    # # recover_stuck_jobs()
+    # logger.info(f"Going for sqs message - - - - ")
+    #
+    # try:
+    #     running = False
+    #     while not running:
+    #         # job = try_lock_job('15d64445-c8b7-4639-994d-865844fbcce9')
+    #         try:
+    #
+    #             job = try_lock_job('22d9a593-f59e-4f5a-89da-76ce26291d8f')
+    #
+    #             try:
+    #                 scraped = get_or_scrape_form_url(job)
+    #                 form_url = scraped or job.get('contact_us_url') or job.get('form_url') or job.get('website_url')
+    #
+    #                 form_data = {
+    #                     'id': job.get('id'),
+    #                     'contact_id': job.get('id'),
+    #                     'form_url': form_url,
+    #                     'full_name': job.get('full_name'),
+    #                     'first_name': job.get('first_name'),
+    #                     'last_name': job.get('last_name'),
+    #                     'company_name': job.get('company_name'),
+    #                     'email_address': job.get('email_address'),
+    #                     'phone_number': job.get('phone_number'),
+    #                     'website_url': job.get('website_url'),
+    #                     'personalized_message': job.get('personalized_message'),
+    #                     'campaign_name': job.get('campaign_name')
+    #                 }
+    #
+    #                 submit_contact_form_old(form_data, job.get('personalized_message'), job)
+    #
+    #             except Exception as e:
+    #                 logger.error(f"Job failed {job['id']}: {e}")
+    #                 mark_failed(job['id'], str(e))
+    #                 # ❌ Do NOT delete message → SQS retry
+    #         except Exception as e:
+    #             logger.info(f"Something went wrong -- - - - {e}")
+    #     logger.info("Worker exiting cleanly")
+    #     # sys.exit(0)
+    # except Exception as e:
+    #     logger.info(f"some thing wrong {e}")
