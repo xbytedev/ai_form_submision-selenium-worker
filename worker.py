@@ -1269,7 +1269,7 @@ import boto3
 import signal
 import sys
 
-QUEUE_URL = os.getenv("QUEUE_URL",'https://sqs.us-east-1.amazonaws.com/957440525184/selenium-jobs')
+QUEUE_URL = os.getenv("QUEUE_URL",'https://sqs.us-east-1.amazonaws.com/957440525184/selenium-worker-jobs')
 VISIBILITY_TIMEOUT = 180  # must be > max selenium execution time
 SHUTDOWN = False
 
