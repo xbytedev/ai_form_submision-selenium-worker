@@ -197,7 +197,7 @@ def build_form_payload_from_row(row: Dict[str, Any], generated_message: str) -> 
 def _get_db_conn():
     if not PSYCOPG2_AVAILABLE:
         logger.warning(f"PSYCOPG2_not AVAILABLE: ")
-        return None  
+        return None
     database_url = os.getenv('DATABASE_URL')
     try:
         if database_url:
@@ -1270,7 +1270,7 @@ import signal
 import sys
 
 QUEUE_URL = os.getenv("QUEUE_URL",'https://sqs.us-east-1.amazonaws.com/957440525184/selenium-worker-jobs')
-VISIBILITY_TIMEOUT = 180  # must be > max selenium execution time
+VISIBILITY_TIMEOUT = 1800  # must be > max selenium execution time
 SHUTDOWN = False
 
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
