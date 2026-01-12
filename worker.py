@@ -1228,7 +1228,7 @@ def mark_failed(contact_id, error):
             last_error = %s,
             form_status = CASE
                 WHEN retry_count + 1 >= %s THEN 'FAILED'
-                ELSE 'PENDING'
+                ELSE 'Queued'
             END,
             worker_id = NULL,
             locked_at = NULL
@@ -1236,6 +1236,8 @@ def mark_failed(contact_id, error):
     """, (error, MAX_RETRIES, contact_id))
     conn.commit()
     conn.close()
+
+
 def thread_worker():
     while True:
         job = fetch_and_lock_one_job()
@@ -1741,7 +1743,7 @@ if __name__ == '__main__':
 
     # recover_stuck_jobs()
     logger.info(f"Going for sqs message - - - - ")
-
+    Job_Main_global=''
     try:
         running=False
         while not running:
@@ -1803,6 +1805,7 @@ if __name__ == '__main__':
 
 
                 job = try_lock_job(contact_id)
+                Job_Main_global=job
                 if job:
                     update_aws_job_metadata(
                         job['id'],
@@ -1851,6 +1854,7 @@ if __name__ == '__main__':
                     mark_failed(job['id'], str(e))
                     # ❌ Do NOT delete message → SQS retry
             except Exception as e:
+                mark_failed(Job_Main_global['id'], str(e))
                 logger.info(f"Something went wrong -- - - - {e}")
         logger.info("Worker exiting cleanly")
         # sys.exit(0)
