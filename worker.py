@@ -1272,7 +1272,7 @@ import signal
 import sys
 
 QUEUE_URL = os.getenv("QUEUE_URL",'https://sqs.us-east-1.amazonaws.com/957440525184/selenium-worker-jobs')
-VISIBILITY_TIMEOUT = 1800  # must be > max selenium execution time
+VISIBILITY_TIMEOUT = 1200  # must be > max selenium execution time
 SHUTDOWN = False
 
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
