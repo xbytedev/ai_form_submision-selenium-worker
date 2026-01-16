@@ -430,10 +430,29 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             print(data, "filling this - - - -")
             logger.info(f"filling this - - - - : {data}")
 
-            try:
-                elements = driver.find_elements(By.XPATH, "//input|//textarea|//select")
-            except Exception:
-                elements = []
+            # try:
+            #     elements = driver.find_elements(By.XPATH, "//input|//textarea|//select")
+            # except Exception:
+            #     elements = []
+            elements = []
+            last_height = driver.execute_script("return document.body.scrollHeight")
+            while True:
+                try:
+                    elements = driver.find_elements(By.XPATH, "//input|//textarea|//select")
+                    if elements:
+                        break  # ✅ elements found → exit loop
+                except Exception:
+                    pass
+
+                # scroll down
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+
+                new_height = driver.execute_script("return document.body.scrollHeight")
+                if new_height == last_height:
+                    break  # ❌ reached bottom → stop loop
+
+                last_height = new_height
 
             try:
                 main_field = driver.find_element(By.XPATH, field_mapping['name'])
@@ -562,13 +581,25 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
 
                 if guess and guess in data and data[guess] is not None:
                     try:
-                        try:
-                            elem.clear()
-                        except Exception:
-                            pass
-                        elem.click()
-                        elem.send_keys(str(data[guess]))
-                        out["filled"][guess] = data[guess]
+                         # try scrolling up to 10 times
+                        for _ in range(10):
+                            try:
+                                try:
+                                    elem.clear()
+                                except Exception:
+                                    pass
+                                elem.click()
+                                elem.send_keys(str(data[guess]))
+                                out["filled"][guess] = data[guess]
+                                break  # ✅ success, stop scrolling
+                            except Exception:
+                                driver.execute_script(
+                                    "arguments[0].scrollIntoView({block: 'center'});",
+                                    elem
+                                )
+                        else:
+                            # runs only if loop never broke
+                            raise Exception("element not interactable after scrolling")
                     except Exception as e:
                         out["notes"].append(f"couldn't fill {guess}: {e}")
 
