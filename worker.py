@@ -142,7 +142,7 @@ def _setup_chrome_options():
     # options.add_argument('--headless')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    #options.add_argument("--headless=new")
+    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
@@ -429,6 +429,21 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
 
             print(data, "filling this - - - -")
             logger.info(f"filling this - - - - : {data}")
+            name_=False
+            if field_mapping.get('name'):
+
+                try:
+                    name_field = driver.find_element(By.XPATH, field_mapping['name'])
+                    time.sleep(0.5)
+                    name_field.clear()
+                    time.sleep(0.5)
+                    name_field.send_keys(cfg['name'])
+                    logger.info(f"Filled subject field: {cfg['name']}")
+                    name_ = True
+                except Exception as e:
+                    logger.warning(f"Could not fill subject field: {e}")
+
+
 
             # try:
             #     elements = driver.find_elements(By.XPATH, "//input|//textarea|//select")
@@ -436,8 +451,11 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             #     elements = []
             elements = []
             last_height = driver.execute_script("return document.body.scrollHeight")
+
             while True:
                 try:
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                     elements = driver.find_elements(By.XPATH, "//input|//textarea|//select")
                     if elements:
                         break  # ✅ elements found → exit loop
@@ -463,7 +481,10 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             except:
                 main_field2=[]
 
+
+
             submit_buttons = []
+            count_scroll = 0
 
             first_radio_selected = False
 
@@ -490,6 +511,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
 
             for elem in elements:
 
+
                 try:
                     if not elem.is_displayed():
                         continue
@@ -498,6 +520,11 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
 
                 tag = elem.tag_name.lower()
                 typ = (elem.get_attribute("type") or "").lower()
+                if not name_:
+                    pass
+                    # Scroll up a little
+                    # driver.execute_script("window.scrollBy(0, -200);")
+                    # time.sleep(0.5)
 
                 # skip hidden / non-interactive
                 if typ in ("hidden", "submit", "button", "image"):
@@ -579,20 +606,46 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     if len(placeholder) < 30 and "message" in placeholder:
                         guess = "message"
 
+                # if guess and guess in data and data[guess] is not None:
+                #     try:
+                #         try:
+                #             elem.clear()
+                #         except Exception:
+                #             pass
+                #         elem.click()
+                #         elem.send_keys(str(data[guess]))
+                #         out["filled"][guess] = data[guess]
+                #     except Exception as e:
+                #         out["notes"].append(f"couldn't fill {guess}: {e}")
+
                 if guess and guess in data and data[guess] is not None:
                     try:
-                         # try scrolling up to 10 times
+                        # try scrolling up to 10 times
                         for _ in range(10):
+                            count_scroll+=1
+                            if count_scroll == 1:
+                                driver.execute_script("window.scrollBy(0, -300);")
+                            else:
+                                driver.execute_script(
+                                    "arguments[0].scrollIntoView({block: 'center'});",
+                                    elem
+                                )
                             try:
+
                                 try:
                                     elem.clear()
                                 except Exception:
+                                    print("cleaning error - - - -")
                                     pass
                                 elem.click()
-                                elem.send_keys(str(data[guess]))                                
+                                elem.send_keys(str(data[guess]))
                                 out["filled"][guess] = data[guess]
-                                logger.info(f"(( Details updated for --  {str(data[guess])}")
+
+                                print(f"cleaning error - - - -{data[guess]} ,{str(data[guess])} ,{count_scroll}")
+
+
                                 break  # ✅ success, stop scrolling
+
                             except Exception:
                                 driver.execute_script(
                                     "arguments[0].scrollIntoView({block: 'center'});",
@@ -601,6 +654,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                         else:
                             # runs only if loop never broke
                             raise Exception("element not interactable after scrolling")
+
                     except Exception as e:
                         out["notes"].append(f"couldn't fill {guess}: {e}")
 
@@ -803,6 +857,8 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 except Exception as e:
                     logger.warning(f"Could not fill subject field: {e}")
 
+
+
             if field_mapping.get('message'):
                 try:
                     message_field = driver.find_element(By.XPATH, field_mapping['message'])
@@ -820,7 +876,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                         'document.getElementById("g-recaptcha-response").dispatchEvent(new Event("change"));')
 
                 def solve_recaptcha(site_key, url):
-                    logger.info(f"Requesting to solve captcha $$$$$$$$$$$ {API_KEY_2CAPTCHA}")
+                    logger.info(f"Requesting to solve captcha $$$$$$$$$$$")
                     s = requests.Session()
                     captcha_id = s.post(
                         "http://2captcha.com/in.php",
@@ -834,11 +890,12 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     ).json()["request"]
 
                     recaptcha_answer = None
-                    for i in range(10):
+                    for i in range(15):
                         time.sleep(5)
                         logger.info(f"Check to solve captcha is solve or not $$$$$$$$$$$")
                         resp = s.get(
                             f"http://2captcha.com/res.php?key={API_KEY_2CAPTCHA}&action=get&id={captcha_id}&json=1").json()
+                        print(resp)
                         if resp["status"] == 1:
                             logger.info(f"$$$$$$$ captcha_info_Check the status solve if 1: {resp['status']}")
                             recaptcha_answer = resp["request"]
@@ -888,21 +945,27 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             except Exception as e:
                 logger.warning(f"Could not Last name field: {e}--- {field_mapping['name']}")
 
-            try:
-                # Wait until at least one radio button or checkbox is clickable
-                first_input = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, "input[type='radio'], input[type='checkbox']"))
-                )
-                time.sleep(0.5)
-                # Click the first one
-                first_input.click()
-                time.sleep(0.5)
-                print("Clicked the first radio button or checkbox found!")
-            except:
-                print("No radio button or checkbox found.")
+            # try:
+            #     # Wait until at least one radio button or checkbox is clickable
+            #     first_input = WebDriverWait(driver, 10).until(
+            #         EC.element_to_be_clickable((By.CSS_SELECTOR, "input[type='radio']"))
+            #     )
+            #     time.sleep(0.5)
+            #     # Click the first one
+            #     first_input.click()
+            #     time.sleep(0.5)
+            #     print("Clicked the first radio button or checkbox found!")
+            # except:
+            #     print("No radio button or checkbox found.")
 
             logger.info(f"Waiting for 5 seconds - - -{form_data['form_url']}")
             time.sleep(5)
+            # if count_scroll>=3:
+            #     driver.execute_script("window.scrollBy(0, 300);")
+            #     time.sleep(0.5)
+            # else:
+            driver.execute_script("window.scrollBy(0, 300);")
+            time.sleep(0.5)
 
             try:
                 # Only consider submit buttons that are contained within a <form> element
@@ -912,26 +975,70 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 )
 
                 if submit_button:
-                    driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
+                    # driver.execute_script("window.scrollBy(0, 300);")
+                    try:
+                        driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
+                        submit_button.click()
+                        logger.info(f"Form submitted successfully{form_data['form_url']}")
+                    except:
+                        pass
+                    time.sleep(2)
+
+                    driver.execute_script("window.scrollTo(0, 0);")
+                    time.sleep(2)
+                    nsubmit_button = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable(
+                            (By.CSS_SELECTOR, "form input[type='submit'], form button[type='submit']"))
+                    )
+                    driver.execute_script("arguments[0].scrollIntoView(true);", nsubmit_button)
                     submit_button.click()
                     logger.info(f"Form submitted successfully{form_data['form_url']}")
-                    time.sleep(2)
                     # submit_button.click()
                     logger.info(f"submit_buttons 1 - -- -Form submitted successfully {form_data['form_url']}")
                 time.sleep(2)
                 if not submit_button:
+                    driver.execute_script("window.scrollTo(0, 300);")
+                    time.sleep(0.5)
                     submit_buttons = driver.find_elements(By.XPATH,
                                                           "//button[@type='submit' or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'send') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'submit')]")
                     time.sleep(2)
                     logger.info(f"submit_buttons 2  - -- -Form submitted successfully {form_data['form_url']}")
 
             except Exception as e:
-                logger.info("Retry to submit")
+                logger.info("Retry to submit",e)
+                driver.execute_script("window.scrollTo(0, 0);")
+
                 try:
-                    submit_button = driver.find_element(By.CSS_SELECTOR,
-                                                        "button:contains('Send'), button:contains('Submit')")
-                    submit_button.click()
-                    logger.info(f"DD &&&&& Submitted Successful...{form_data['form_url']}")
+
+                    try:
+                        try:
+                            submit_button = WebDriverWait(driver, 10).until(
+                                EC.element_to_be_clickable(
+                                    (By.CSS_SELECTOR, "form input[type='submit'], form button[type='submit']"))
+                            )
+                            if submit_button:
+                                driver.execute_script("window.scrollBy(0, -300);")
+                                driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
+                                submit_button.click()
+                                logger.info(f"Form submitted successfully{form_data['form_url']}")
+                                time.sleep(2)
+                                # submit_button.click()
+                                logger.info(f"submit_buttons 1 - -- -Form submitted successfully {form_data['form_url']}")
+                        except:
+                            time.sleep(2)
+                            driver.execute_script("window.scrollTo(0, 300);")
+
+                            submit_buttons = driver.find_elements(By.XPATH,
+                                                                  "//button[@type='submit' or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'send') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'submit')]")
+                            time.sleep(2)
+                            logger.info(f"submit_buttons 2  - -- -Form submitted successfully {form_data['form_url']}")
+
+                    except:
+                        driver.execute_script("window.scrollBy(0, 200);")
+                        submit_button = driver.find_element(By.CSS_SELECTOR,
+                                                            "button:contains('Send'), button:contains('Submit')")
+                        submit_button.click()
+                        logger.info(f"DD &&&&& Submitted Successful...{form_data['form_url']}")
                 except:
                     try:
                         logger.info("  advancesd - -- - -")
