@@ -589,8 +589,9 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                                 except Exception:
                                     pass
                                 elem.click()
-                                elem.send_keys(str(data[guess]))
+                                elem.send_keys(str(data[guess]))                                
                                 out["filled"][guess] = data[guess]
+                                logger.info(f"(( Details updated for --  {str(data[guess])}")
                                 break  # ✅ success, stop scrolling
                             except Exception:
                                 driver.execute_script(
@@ -819,7 +820,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                         'document.getElementById("g-recaptcha-response").dispatchEvent(new Event("change"));')
 
                 def solve_recaptcha(site_key, url):
-                    logger.info(f"Requesting to solve captcha $$$$$$$$$$$")
+                    logger.info(f"Requesting to solve captcha $$$$$$$$$$$ {API_KEY_2CAPTCHA}")
                     s = requests.Session()
                     captcha_id = s.post(
                         "http://2captcha.com/in.php",
