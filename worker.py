@@ -1004,7 +1004,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     logger.info(f"submit_buttons 2  - -- -Form submitted successfully {form_data['form_url']}")
 
             except Exception as e:
-                logger.info("Retry to submit",e)
+                logger.info(f"Retry to submit {e}")
                 driver.execute_script("window.scrollTo(0, 0);")
 
                 try:
@@ -1602,8 +1602,8 @@ def update_aws_job_metadata(
             user_completed_time = utc_now.astimezone(user_timezone)
             fields.append("user_completed_time=%s")
             values.append(str(user_completed_time))
-        except:
-            logger.info(f"Error in time values: {contact_id}")
+        except Exception as e:
+            logger.info(f"Error in time values: {contact_id} {e}")
 
     fields.extend([
         "sqs_queue_url=%s",
