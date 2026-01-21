@@ -13,8 +13,9 @@ Environment variables used for DB (optional):
 """
 
 from datetime import timezone
+import pytz
 try:
-    import pytz
+
     PYTZ_AVAILABLE = True
 except Exception:
     PYTZ_AVAILABLE = False
