@@ -498,20 +498,8 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     'form_url': form_data['form_url']
                 }
 
-
                 logger.info(f"Form Not found - - - - : {result}")
                 submission_time = datetime.utcnow()
-
-                if 'Attention Required! | Cloudflare' in driver.page_source:
-                    update_aws_job_metadata(
-                        job['id'],
-                        status="FAILED",
-                        completed=True, job=job
-                    )
-                    mark_failed(job['id'], 'Attention Required! | Cloudflare')
-
-                    return result
-
                 if contact_id:
                     # update_contact_status(contact_id, 'FORM NOT FOUND','FORM NOT FOUND', submission_time)
                     update_aws_job_metadata(
