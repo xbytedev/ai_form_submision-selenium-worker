@@ -437,8 +437,8 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     time.sleep(0.5)
                     name_field.clear()
                     time.sleep(0.5)
-                    name_field.send_keys(cfg['name'])
-                    logger.info(f"Filled subject field: {cfg['name']}")
+                    name_field.send_keys(cfg['sender_name'])
+                    logger.info(f"Filled subject field: {cfg['sender_name']}")
                     name_ = True
                 except Exception as e:
                     logger.warning(f"Could not fill subject field: {e}")
@@ -548,14 +548,13 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 # --- checkboxes ---
                 if typ == "checkbox":
                     label = text_of_label_for(driver, elem).lower()
-                    if "subscribe" in label or "newsletter" in label:
-                        if data.get("subscribe", False):
-                            try:
-                                if not elem.is_selected():
-                                    elem.click()
-                                out["filled"]["subscribe"] = True
-                            except Exception as e:
-                                out["notes"].append(f"checkbox click failed: {e}")
+                    if elem:
+                        try:
+                            if not elem.is_selected():
+                                elem.click()
+                            out["filled"]["subscribe"] = True
+                        except Exception as e:
+                            out["notes"].append(f"checkbox click failed: {e}")
                     continue
 
                 # --- radio buttons: select first radio ---
@@ -1737,7 +1736,7 @@ def get_or_scrape_form_url(job):
 
     found = None
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (compatible; ContactScraper/1.0)'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0'}
         resp = requests.get(website, headers=headers, timeout=30, allow_redirects=True)
         if resp.status_code != 200 and resp.text:
             found = find_contact_url_in_html(resp.text, resp.url)
