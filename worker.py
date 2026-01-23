@@ -11,7 +11,7 @@ Usage example:
 Environment variables used for DB (optional):
 - DATABASE_URL or DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 """
-
+import re
 from datetime import timezone
 import pytz
 try:
@@ -137,7 +137,37 @@ def find_best_key_for_element(driver, elem):
         return "message"
     return None
 
+def extract_form_fields(driver):
+    fields = []
 
+    elements = driver.find_elements(
+        By.XPATH,
+        "//input | //textarea | //select"
+    )
+
+    for el in elements:
+        field = {
+            "tag": el.tag_name,
+            "name": el.get_attribute("name"),
+            "id": el.get_attribute("id"),
+            "placeholder": el.get_attribute("placeholder"),
+            "type": el.get_attribute("type"),
+            "label": None
+        }
+
+        # Try to find label
+        el_id = field["id"]
+        if el_id:
+            labels = driver.find_elements(
+                By.XPATH,
+                f"//label[@for='{el_id}']"
+            )
+            if labels:
+                field["label"] = labels[0].text.strip()
+
+        fields.append(field)
+
+    return fields
 def _setup_chrome_options():
     options = Options()
     # options.add_argument('--headless')
@@ -246,9 +276,74 @@ def update_contact_status(contact_id: str, status: str,final_status:str, submiss
             pass
         return False
 
-
+def normalize(text):
+    if not text:
+        return ""
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9\s]', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
 # --- Main exported function ---
+def match_percentage(text, synonyms):
+    text_norm = normalize(text)
+    if not text_norm:
+        return 0
 
+    best_score = 0
+
+    for syn in synonyms:
+        syn_norm = normalize(syn)
+        if not syn_norm:
+            continue
+
+        # Strong match: synonym contained in text
+        if syn_norm in text_norm:
+            score = 100
+        else:
+            score = 0
+
+        best_score = max(best_score, score)
+
+    return best_score
+def map_fields_to_data(form_fields, data):
+    missing = []
+    matched = {}
+
+    for canonical, synonyms in FIELD_KEYWORDS.items():
+        value = data.get(canonical)
+        best_score = 0
+        # Check if data is missing
+        if not value:
+            # See if website has this field
+            found = False
+            for field in form_fields:
+                text_sources = [
+                    field.get("label"),
+                    field.get("name"),
+                    field.get("id"),
+                    field.get("placeholder"),
+                    field.get("type")
+                ]
+
+
+                # for text in text_sources:
+                #     if normalize(text) in synonyms:
+                #         found = True
+                #         break
+                for text in text_sources:
+                    score = match_percentage(text, synonyms)
+                    best_score = max(best_score, score)
+                    if best_score >= 90 and not value:
+                        found = True
+                        break
+
+            if found:
+                missing.append(canonical)
+
+        else:
+            matched[canonical] = value
+
+    return matched, missing
 
 def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,job, user_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Submit a contact form (standalone).
@@ -312,6 +407,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 pass
             # Try to fill mapped fields if provided
             field_mapping = form_data1.get('field_mapping', {})
+            form_fields = extract_form_fields(driver)
 
             # Basic prepared data
             data = {
@@ -323,8 +419,26 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 'describe': form_data.get('personalized_message'),
                 'about': form_data.get('personalized_message'),
                 'phone': cfg['sender_phone'],
+                'tel': cfg['sender_phone'],
+                'mobile': cfg['sender_phone'],
                 'company': cfg['company_name']
             }
+
+            matched, missing = map_fields_to_data(form_fields, data)
+            if missing:
+                update_aws_job_metadata(
+                    job['id'],
+                    status="FAILED",
+                    completed=True, job=job, ERROR=f'Missing Values in These Fields {missing}',
+                )
+                result = {
+                    'success': False,
+                    'submission_time': datetime.now(),
+                    'error': 'FAILED',
+                    'response_page': driver.page_source[:1000],  # First 1000 chars
+                    'form_url': form_data['form_url']
+                }
+                return result
 
             # # Find inputs
             # try:
@@ -488,6 +602,44 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             count_scroll = 0
 
             first_radio_selected = False
+            BLOCKING_KEYWORDS = [
+                "Attention Required! | Cloudflare",
+                "Access denied",
+                "403 Forbidden",
+                "You have been blocked",
+                "Checking your browser",
+                "Verify you are human",
+                "Too many redirects",
+                "500 Internal Server Error",
+                "502 Bad Gateway",
+                "503 Service Unavailable",
+                "ERR_CONNECTION_TIMED_OUT",
+                "This site can’t be reached",
+                "Page not found",
+            ]
+
+            page_source_lower = driver.page_source.lower()
+            matched_errors = [
+                keyword for keyword in BLOCKING_KEYWORDS
+                if keyword.lower() in page_source_lower
+            ]
+
+            if matched_errors:
+                update_aws_job_metadata(
+                    job['id'],
+                    status="FAILED",
+                    completed=True,
+                    job=job,
+                    ERROR="Page blocked or failed to load. Detected: " + ", ".join(matched_errors)
+                )
+                result = {
+                    'success': False,
+                    'submission_time': datetime.now(),
+                    'error': 'Form Not found',
+                    'response_page': driver.page_source[:1000],  # First 1000 chars
+                    'form_url': form_data['form_url']
+                }
+                return result
 
             if not elements and not main_field2 and not main_field:
                 result = {
