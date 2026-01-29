@@ -76,7 +76,7 @@ FIELD_KEYWORDS = {
     "subject": ["subject", "topic", "reason"],
     "message": ["message", "comment", "comments", "enquiry", "inquiry", "description", "body","describe"],
     "phone": ["phone", "tel", "mobile", "contact-number"],
-    "company": ["company", "organization", "organisation", "org"],
+    "company": ["company", "organization", "organisation", "org","company","organization","organisation","business","firm","corp","corporation","co","employer","enterprise","brand"],
 }
 
 SUBMIT_TEXT_KEYWORDS = ["send", "submit", "contact", "enquire", "apply", "message"]
@@ -366,7 +366,8 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
     }
 
     default_user_config = {
-        'sender_name':  form_data.get('full_name'),
+        'sender_name':  form_data.get('full_name') or form_data.get('first_name'),
+        'sender_lname':  form_data.get('last_name'),
         'sender_email': form_data.get('email_address'),
         'sender_phone': form_data.get('phone_number'),
         'message_subject': form_data.get('personalized_message'),
@@ -423,6 +424,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             # Basic prepared data
             data = {
                 'name': cfg['sender_name'],
+                'lname': cfg['sender_lname'],
                 'email': cfg['sender_email'],
                 'subject': cfg['message_subject'],
                 'message': form_data.get('personalized_message'),
@@ -614,6 +616,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             count_scroll = 0
 
             first_radio_selected = False
+            captcha_solved = 'Not Detected captcha'
             BLOCKING_KEYWORDS = [
                 "Attention Required! | Cloudflare",
                 "Access denied",
@@ -797,8 +800,12 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
 
                     try:
                         if name_ and guess=='name':
-                            logger.info(f" condition Skipped- -{guess} is already there")
-                            continue
+                            placeholder = (elem.get_attribute("placeholder") or "").lower()
+                            if 'last' in placeholder.lower() or any(word.lower() in placeholder.lower() for word in FIELD_KEYWORDS['company']):
+                                pass
+                            else:
+                                logger.info(f" condition Skipped- -{guess} is already there")
+                                continue
                     except Exception as e:
                         logger.info(f"Wrong condition - -{guess}")
                     try:
@@ -820,7 +827,13 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                                     print("cleaning error - - - -")
                                     pass
                                 elem.click()
-                                elem.send_keys(str(data[guess]))
+                                placeholder = (elem.get_attribute("placeholder") or "").lower()
+                                if 'last' in placeholder.lower():
+                                    elem.send_keys(str(data['lname']))
+                                elif any(word.lower() in placeholder.lower() for word in FIELD_KEYWORDS['company']):
+                                    elem.send_keys(str(data['company']))
+                                else:
+                                    elem.send_keys(str(data[guess]))
                                 out["filled"][guess] = data[guess]
 
                                 print(f"cleaning error - - - -{data[guess]} ,{str(data[guess])} ,{count_scroll}")
@@ -1072,17 +1085,19 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     ).json()["request"]
 
                     recaptcha_answer = None
-                    for i in range(20):
+                    captcha_solved = 'Captcha not solved'
+                    for i in range(30):
                         time.sleep(5)
                         logger.info(f"Check to solve captcha is solve or not $$$$$$$$$$$")
                         resp = s.get(
                             f"http://2captcha.com/res.php?key={API_KEY_2CAPTCHA}&action=get&id={captcha_id}&json=1").json()
                         print(resp)
                         if resp["status"] == 1:
+                            captcha_solved = 'Captcha solved'
                             logger.info(f"$$$$$$$ captcha_info_Check the status solve if 1: {resp['status']}")
                             recaptcha_answer = resp["request"]
                             break
-                    return recaptcha_answer
+                    return recaptcha_answer,captcha_solved
 
                 frames = driver.find_elements(By.TAG_NAME, "iframe")
                 logger.info(f"captcha_info: {frames}")
@@ -1099,7 +1114,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                         site_key = params.get("k", [None])[0]
                         break
                 if recaptcha_frame and site_key:
-                    token = solve_recaptcha(site_key, driver.current_url)
+                    token,captcha_solved = solve_recaptcha(site_key, driver.current_url)
                     if token:
                         inject_recaptcha_response(driver, token)
                         logger.info("reCAPTCHA solved via 2Captcha - - - -")
@@ -1343,9 +1358,9 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 update_aws_job_metadata(
                     job['id'],
                     status="COMPLETED",
-                    completed=True,job=job,screenshot_bytes=screenshot_bytes
+                    completed=True,job=job,screenshot_bytes=screenshot_bytes,captcha_solved=captcha_solved
                 )
-                time.sleep(25)
+                time.sleep(2)
 
             return result
 
@@ -1760,7 +1775,7 @@ def update_aws_job_metadata(
     receipt_handle=None,
     status=None,
     started=False,
-    completed=False,job=None,ERROR=None,screenshot_bytes=None
+    completed=False,job=None,ERROR=None,screenshot_bytes=None,captcha_solved=None
 ):
     conn = _get_db_conn()
     if not conn:
@@ -1795,6 +1810,10 @@ def update_aws_job_metadata(
     if ERROR:
         fields.append("last_error=%s")
         values.append(ERROR)
+
+    if captcha_solved:
+        fields.append("captcha_solved=%s")
+        values.append(f'{captcha_solved}')
 
     if screenshot_bytes:
         fields.append("screenshot_img=%s")
