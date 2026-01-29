@@ -174,9 +174,11 @@ def _setup_chrome_options():
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     # options.add_argument("--headless=new")
+
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--start-maximized")
+    options.add_argument("--remote-debugging-port=9222")
 
     # unique_id = str(uuid.uuid4())[:9]
     # timestamp = str(int(time.time() * 1000))
@@ -387,6 +389,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
     # Try Selenium-based submission first if available
     if SELENIUM_AVAILABLE:
         chrome_options = _setup_chrome_options()
+        chrome_options.binary_location = "/usr/bin/google-chrome"
         driver = None
         out = {"filled": {}, "submitted": False, "notes": []}
         try:
@@ -394,8 +397,12 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             from selenium.webdriver.chrome.service import Service
             from webdriver_manager.chrome import ChromeDriverManager
             logger.info(f"Going TO opend Driver : {form_data['form_url']}")
+            service = Service(
+                ChromeDriverManager().install(),
+                log_path="/tmp/chromedriver.log"
+            )
             driver = webdriver.Chrome(
-                service=Service(ChromeDriverManager().install()),
+                service=service,
                 options=chrome_options
             )
             driver.maximize_window()
