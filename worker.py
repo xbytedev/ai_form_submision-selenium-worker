@@ -173,9 +173,10 @@ def _setup_chrome_options():
     # options.add_argument('--headless')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    options.add_argument("--headless=new")
+    # options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--start-maximized")
 
     # unique_id = str(uuid.uuid4())[:9]
     # timestamp = str(int(time.time() * 1000))
@@ -397,6 +398,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 service=Service(ChromeDriverManager().install()),
                 options=chrome_options
             )
+            driver.maximize_window()
             driver.get(form_data['form_url'])
             time.sleep(3)
 
@@ -553,7 +555,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     name_field.clear()
                     time.sleep(0.5)
                     name_field.send_keys(cfg['sender_name'])
-                    logger.info(f"Filled subject field: {cfg['sender_name']}")
+                    logger.info(f"Filled name field: {cfg['sender_name']}")
                     name_ = True
                 except Exception as e:
                     logger.warning(f"Could not fill subject field: {e}")
@@ -587,6 +589,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
 
                 last_height = new_height
 
+            check_box_clicked=False
             try:
                 main_field = driver.find_element(By.XPATH, field_mapping['name'])
             except:
@@ -710,11 +713,13 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 # --- checkboxes ---
                 if typ == "checkbox":
                     label = text_of_label_for(driver, elem).lower()
-                    if elem:
+                    if elem and not check_box_clicked:
                         try:
                             if not elem.is_selected():
                                 elem.click()
                             out["filled"]["subscribe"] = True
+                            logger.info("check box clicked - - -")
+                            check_box_clicked = True
                         except Exception as e:
                             out["notes"].append(f"checkbox click failed: {e}")
                     continue
@@ -1051,7 +1056,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     ).json()["request"]
 
                     recaptcha_answer = None
-                    for i in range(15):
+                    for i in range(20):
                         time.sleep(5)
                         logger.info(f"Check to solve captcha is solve or not $$$$$$$$$$$")
                         resp = s.get(
@@ -1106,18 +1111,19 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             except Exception as e:
                 logger.warning(f"Could not Last name field: {e}--- {field_mapping['name']}")
 
-            # try:
-            #     # Wait until at least one radio button or checkbox is clickable
-            #     first_input = WebDriverWait(driver, 10).until(
-            #         EC.element_to_be_clickable((By.CSS_SELECTOR, "input[type='radio']"))
-            #     )
-            #     time.sleep(0.5)
-            #     # Click the first one
-            #     first_input.click()
-            #     time.sleep(0.5)
-            #     print("Clicked the first radio button or checkbox found!")
-            # except:
-            #     print("No radio button or checkbox found.")
+            try:
+                # Wait until at least one radio button or checkbox is clickable
+                if not first_radio_selected:
+                    first_input = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "input[type='radio']"))
+                    )
+                    time.sleep(0.5)
+                    # Click the first one
+                    first_input.click()
+                    time.sleep(0.5)
+                    print("Clicked the first radio button or checkbox found!")
+            except Exception as e:
+                logger.info(f"No radio button or checkbox found.{e}")
 
             logger.info(f"Waiting for 5 seconds - - -{form_data['form_url']}")
             time.sleep(5)
@@ -1143,10 +1149,10 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                         logger.info(f"Form submitted successfully{form_data['form_url']}")
                     except:
                         pass
-                    time.sleep(2)
+                    time.sleep(0.5)
 
                     driver.execute_script("window.scrollTo(0, 0);")
-                    time.sleep(2)
+                    time.sleep(0.5)
                     nsubmit_button = WebDriverWait(driver, 10).until(
                         EC.element_to_be_clickable(
                             (By.CSS_SELECTOR, "form input[type='submit'], form button[type='submit']"))
@@ -1156,13 +1162,13 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     logger.info(f"Form submitted successfully{form_data['form_url']}")
                     # submit_button.click()
                     logger.info(f"submit_buttons 1 - -- -Form submitted successfully {form_data['form_url']}")
-                time.sleep(2)
+                time.sleep(0.5)
                 if not submit_button:
                     driver.execute_script("window.scrollTo(0, 300);")
                     time.sleep(0.5)
                     submit_buttons = driver.find_elements(By.XPATH,
                                                           "//button[@type='submit' or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'send') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'submit')]")
-                    time.sleep(2)
+                    time.sleep(0.5)
                     logger.info(f"submit_buttons 2  - -- -Form submitted successfully {form_data['form_url']}")
 
             except Exception as e:
@@ -1182,16 +1188,16 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                                 driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
                                 submit_button.click()
                                 logger.info(f"Form submitted successfully{form_data['form_url']}")
-                                time.sleep(2)
+                                time.sleep(0.5)
                                 # submit_button.click()
                                 logger.info(f"submit_buttons 1 - -- -Form submitted successfully {form_data['form_url']}")
                         except:
-                            time.sleep(2)
+                            time.sleep(0.5)
                             driver.execute_script("window.scrollTo(0, 300);")
 
                             submit_buttons = driver.find_elements(By.XPATH,
                                                                   "//button[@type='submit' or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'send') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'submit')]")
-                            time.sleep(2)
+                            time.sleep(0.5)
                             logger.info(f"submit_buttons 2  - -- -Form submitted successfully {form_data['form_url']}")
 
                     except:
@@ -1225,7 +1231,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                                 submit_button = driver.find_element(By.CSS_SELECTOR,
                                                                     "input[type='submit'], button[type='submit']")
                                 driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
-                                time.sleep(2)
+                                time.sleep(0.5)
                                 submit_button.click()
                                 logger.info(f"Form submitted successfully{form_data['form_url']}")
                             except:
@@ -1274,6 +1280,18 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                                                 }
 
             # Wait for submission
+            try:
+                width = driver.execute_script("return document.body.scrollWidth")
+                height = driver.execute_script("return document.body.scrollHeight")
+
+                driver.set_window_size(width, height)
+
+                screenshot_bytes = driver.get_screenshot_as_png()
+
+                logger.info(f"Taking screenshot Captured - - - -")
+            except Exception as e:
+                screenshot_bytes = None
+                logger.info(f"Taking screenshot Error- -  - - - - {e}")
             time.sleep(5)
 
             # Check for success indicators
@@ -1309,7 +1327,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 update_aws_job_metadata(
                     job['id'],
                     status="COMPLETED",
-                    completed=True,job=job
+                    completed=True,job=job,screenshot_bytes=screenshot_bytes
                 )
 
             return result
@@ -1725,7 +1743,7 @@ def update_aws_job_metadata(
     receipt_handle=None,
     status=None,
     started=False,
-    completed=False,job=None,ERROR=None
+    completed=False,job=None,ERROR=None,screenshot_bytes=None
 ):
     conn = _get_db_conn()
     if not conn:
@@ -1760,6 +1778,11 @@ def update_aws_job_metadata(
     if ERROR:
         fields.append("last_error=%s")
         values.append(ERROR)
+
+    if screenshot_bytes:
+        fields.append("screenshot_img=%s")
+        values.append(psycopg2.Binary(screenshot_bytes))
+
 
     if completed:
         try:
