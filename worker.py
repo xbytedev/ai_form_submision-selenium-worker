@@ -76,7 +76,7 @@ FIELD_KEYWORDS = {
     "subject": ["subject", "topic", "reason"],
     "message": ["message", "comment", "comments", "enquiry", "inquiry", "description", "body","describe"],
     "phone": ["phone", "tel", "mobile", "contact-number"],
-    "company": ["company", "organization", "organisation", "org","company","organization","organisation","business","firm","corp","corporation","co","employer","enterprise","brand"],
+    "company": ["company", "organization", "organisation", "company","organization","organisation","business","firm","corporation","employer","enterprise","brand"],
 }
 
 SUBMIT_TEXT_KEYWORDS = ["send", "submit", "contact", "enquire", "apply", "message"]
