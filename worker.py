@@ -413,6 +413,16 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             time.sleep(5)
 
             try:
+                driver.execute_script("""
+                               let popup = document.querySelector('div.elementor-popup-modal');
+                               if (popup) {
+                                   popup.remove();
+                               }
+                           """)
+            except:
+                pass
+
+            try:
                 Accept = driver.find_element(By.XPATH, '//button[@aria-label="Accept All"]')
                 Accept.click()
             except:
