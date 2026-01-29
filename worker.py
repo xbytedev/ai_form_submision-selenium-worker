@@ -580,13 +580,18 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             elements = []
             last_height = driver.execute_script("return document.body.scrollHeight")
 
+            n_counter=0
             while True:
                 try:
                     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                     elements = driver.find_elements(By.XPATH, "//input|//textarea|//select")
+                    n_counter+=1
+
                     if elements:
                         break  # ✅ elements found → exit loop
+                    if n_counter>10:
+                        break
                 except Exception:
                     pass
 
@@ -1166,13 +1171,25 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             time.sleep(0.5)
 
             try:
+
+                submit_buttons = driver.find_elements(By.XPATH,
+                                                      "//button[@type='submit' or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'send') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'submit')]")
+                final_clicked = False
+                if submit_buttons:
+                    for button in submit_buttons:
+                        try:
+                            button.click()
+                            time.sleep(0.5)
+                            final_clicked = True
+                        except:
+                            pass
                 # Only consider submit buttons that are contained within a <form> element
                 submit_button = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable(
                         (By.CSS_SELECTOR, "form input[type='submit'], form button[type='submit']"))
                 )
 
-                if submit_button:
+                if submit_button and not final_clicked:
                     # driver.execute_script("window.scrollBy(0, 300);")
                     try:
                         driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
@@ -1200,6 +1217,11 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     submit_buttons = driver.find_elements(By.XPATH,
                                                           "//button[@type='submit' or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'send') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'submit')]")
                     time.sleep(0.5)
+                    for button in submit_buttons:
+                        try:
+                            button.click()
+                        except:
+                            pass
                     logger.info(f"submit_buttons 2  - -- -Form submitted successfully {form_data['form_url']}")
 
             except Exception as e:
