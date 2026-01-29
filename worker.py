@@ -177,7 +177,8 @@ def _setup_chrome_options():
 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--start-maximized")
+    # options.add_argument("--start-maximized")
+    options.add_argument("--window-size=1920,9000")
     # options.add_argument("--remote-debugging-port=9222")
 
     # unique_id = str(uuid.uuid4())[:9]
@@ -406,7 +407,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 service=service,
                 options=chrome_options
             )
-            driver.maximize_window()
+            # driver.maximize_window()
             driver.get(form_data['form_url'])
             time.sleep(5)
 
@@ -793,6 +794,13 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 #         out["notes"].append(f"couldn't fill {guess}: {e}")
 
                 if guess and guess in data and data[guess] is not None:
+
+                    try:
+                        if name_ and guess=='name':
+                            logger.info(f" condition Skipped- -{guess} is already there")
+                            continue
+                    except Exception as e:
+                        logger.info(f"Wrong condition - -{guess}")
                     try:
                         # try scrolling up to 10 times
                         for _ in range(10):
