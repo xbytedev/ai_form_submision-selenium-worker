@@ -75,7 +75,7 @@ FIELD_KEYWORDS = {
     "email": ["email", "e-mail", "mail"],
     "subject": ["subject", "topic", "reason"],
     "message": ["message", "comment", "comments", "enquiry", "inquiry", "description", "body","describe"],
-    "phone": ["phone", "tel", "mobile", "contact-number"],
+    "phone": ["phone", "tel", "mobile", "contact-number","number"],
     "company": ["company", "organization", "organisation", "company","organization","organisation","business","firm","corporation","employer","enterprise","brand"],
 }
 
@@ -845,6 +845,9 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                                 placeholder = (elem.get_attribute("placeholder") or "").lower()
                                 if 'last' in placeholder.lower():
                                     elem.send_keys(str(data['lname']))
+                                elif any(word.lower() in placeholder.lower() for word in FIELD_KEYWORDS['phone']):
+                                    elem.send_keys(str(data['phone']))
+
                                 elif any(word.lower() in placeholder.lower() for word in FIELD_KEYWORDS['company']):
                                     elem.send_keys(str(data['company']))
                                 else:
