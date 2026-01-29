@@ -173,12 +173,12 @@ def _setup_chrome_options():
     # options.add_argument('--headless')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    # options.add_argument("--headless=new")
+    options.add_argument("--headless=new")
 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--start-maximized")
-    options.add_argument("--remote-debugging-port=9222")
+    # options.add_argument("--remote-debugging-port=9222")
 
     # unique_id = str(uuid.uuid4())[:9]
     # timestamp = str(int(time.time() * 1000))
