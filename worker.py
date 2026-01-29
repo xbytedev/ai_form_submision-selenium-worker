@@ -389,7 +389,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
     # Try Selenium-based submission first if available
     if SELENIUM_AVAILABLE:
         chrome_options = _setup_chrome_options()
-        chrome_options.binary_location = "/usr/bin/google-chrome"
+        chrome_options.binary_location = "/usr/bin/chromium-browser"
         driver = None
         out = {"filled": {}, "submitted": False, "notes": []}
         try:
@@ -397,10 +397,11 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             from selenium.webdriver.chrome.service import Service
             from webdriver_manager.chrome import ChromeDriverManager
             logger.info(f"Going TO opend Driver : {form_data['form_url']}")
-            service = Service(
-                ChromeDriverManager().install(),
-                log_path="/tmp/chromedriver.log"
-            )
+            # service = Service(
+            #     ChromeDriverManager().install(),
+            #     log_path="/tmp/chromedriver.log"
+            # )
+            service = Service("/usr/bin/chromedriver")
             driver = webdriver.Chrome(
                 service=service,
                 options=chrome_options
