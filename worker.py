@@ -408,7 +408,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
             )
             driver.maximize_window()
             driver.get(form_data['form_url'])
-            time.sleep(5)
+            time.sleep(3)
 
             try:
                 Accept = driver.find_element(By.XPATH, '//button[@aria-label="Accept All"]')
@@ -1292,7 +1292,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 width = driver.execute_script("return document.body.scrollWidth")
                 height = driver.execute_script("return document.body.scrollHeight")
 
-                driver.set_window_size(width, 15000)
+                driver.set_window_size(width, height)
 
                 screenshot_bytes = driver.get_screenshot_as_png()
 
@@ -1337,7 +1337,6 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     status="COMPLETED",
                     completed=True,job=job,screenshot_bytes=screenshot_bytes
                 )
-                time.sleep(25)
 
             return result
 
