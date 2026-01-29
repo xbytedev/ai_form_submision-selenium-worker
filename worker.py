@@ -793,6 +793,13 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 #         out["notes"].append(f"couldn't fill {guess}: {e}")
 
                 if guess and guess in data and data[guess] is not None:
+                    
+                    try:
+                        if name_ and guess=='name':
+                            logger.info(f" condition Skipped- -{guess} is already there")
+                            continue
+                    except Exception as e:
+                        logger.info(f"Wrong condition - -{guess}")
                     try:
                         # try scrolling up to 10 times
                         for _ in range(10):
