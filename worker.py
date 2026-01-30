@@ -773,8 +773,11 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     continue
 
                 key = find_best_key_for_element(driver, elem)
-                if 'quoteForms' in key:
-                    continue
+                try:
+                    if 'quoteForms' in key:
+                        continue
+                except:
+                    pass
 
                 # --- file upload ---
                 if tag == "input" and typ == "file":
@@ -787,6 +790,9 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                             out["notes"].append(f"file upload failed: {e}")
                     continue
 
+                label = text_of_label_for(driver, elem).lower()
+                if not label:
+                    label = ''
                 # --- checkboxes ---
                 if typ == "checkbox":
                     label = text_of_label_for(driver, elem).lower()
@@ -895,15 +901,12 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                                 placeholder = (elem.get_attribute("placeholder") or "").lower()
                                 if 'last' in placeholder.lower():
                                     elem.send_keys(str(data['lname']))
-                                elif typ == 'email':
-                                    elem.send_keys(str(data['email']))
-                                elif typ == 'tel':
-                                    elem.send_keys(str(data['phone']))
-                                elif any(word.lower() in placeholder.lower() for word in FIELD_KEYWORDS['phone']):
-                                    elem.send_keys(str(data['phone']))
-
-                                elif any(word.lower() in placeholder.lower() for word in FIELD_KEYWORDS['company']):
+                                elif any(word.lower() in placeholder.lower() for word in FIELD_KEYWORDS['company']) or any(word.lower() in label.lower() for word in FIELD_KEYWORDS['company']):
                                     elem.send_keys(str(data['company']))
+                                elif typ=='email' or any(word.lower() in label.lower() for word in FIELD_KEYWORDS['email']):
+                                    elem.send_keys(str(data['email']))
+                                elif typ=='tel'  or any(word.lower() in label.lower() for word in FIELD_KEYWORDS['phone']):
+                                    elem.send_keys(str(data['phone']))
                                 else:
                                     elem.send_keys(str(data[guess]))
                                 out["filled"][guess] = data[guess]
