@@ -712,7 +712,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 }
                 return result
 
-            if 'href="/lander"' in page_source_lower or '<html' not in page_source_lower or 'LANDER_SYSTEM' in page_source_lower or "/lander" in page_source_lower or "error-page" in page_source_lower or "page not found" in page_source_lower or "site not found" in page_source_lower or "domain parked" in page_source_lower or "this domain is parked" in page_source_lower or "buy this domain" in page_source_lower or "suspendisse" in page_source_lower or 'currently unavailable' in page_source_lower or 'this domain is for sale' in page_source_lower or 'domain for sale' in page_source_lower or 'website suspended' in page_source_lower or 'website is suspended' in page_source_lower or 'is parked free' in page_source_lower or 'this domain has been registered' in page_source_lower or 'this domain is registered' in page_source_lower:
+            if 'href="/lander"' in page_source_lower or '<html' not in page_source_lower or 'LANDER_SYSTEM' in page_source_lower   or "page not found" in page_source_lower or "site not found" in page_source_lower or "domain parked" in page_source_lower or "this domain is parked" in page_source_lower or "buy this domain" in page_source_lower or "suspendisse" in page_source_lower or 'currently unavailable' in page_source_lower or 'this domain is for sale' in page_source_lower or 'domain for sale' in page_source_lower or 'website suspended' in page_source_lower or 'website is suspended' in page_source_lower:
                 update_aws_job_metadata(
                     job['id'],
                     status="FAILED",
