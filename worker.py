@@ -89,8 +89,20 @@ def text_of_label_for(driver, input_elem):
         id_attr = input_elem.get_attribute("id")
         if id_attr:
             labels = driver.find_elements(By.XPATH, f"//label[@for='{id_attr}']")
+            label = driver.find_elements(
+                By.XPATH,
+                f"//input[@id='{id_attr}']/preceding-sibling::label[1]"
+            )
+            label3 = driver.find_elements(
+                By.XPATH,
+                f"//textarea[@id='{id_attr}']/preceding-sibling::label[1]"
+            )
             if labels:
                 return " ".join([l.text for l in labels]).strip()
+            elif label:
+                return " ".join([l.text for l in label]).strip()
+            elif label3:
+                return " ".join([l.text for l in label3]).strip()
         parent = input_elem.find_element(By.XPATH, "ancestor::label[1]")
         if parent:
             return parent.text.strip()
@@ -125,6 +137,9 @@ def find_best_key_for_element(driver, elem):
     combined = attr_texts(elem)
     label_text = text_of_label_for(driver, elem)
     combined = (combined + " " + label_text).lower()
+    for key, kws in FIELD_KEYWORDS.items():
+        if matches_keywords(label_text, kws):
+            return key
     for key, kws in FIELD_KEYWORDS.items():
         if matches_keywords(combined, kws):
             return key
@@ -348,7 +363,14 @@ def map_fields_to_data(form_fields, data):
             matched[canonical] = value
 
     return matched, missing
-
+ALLOWED_TYPES = {'text', 'email', 'number'}
+def has_valid_form_element(elements):
+    return any(
+        el.get('tag') == 'input'
+        and el.get('name')
+        and el.get('type') in ALLOWED_TYPES
+        for el in elements
+    )
 def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,job, user_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Submit a contact form (standalone).
 
@@ -632,6 +654,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
 
             first_radio_selected = False
             captcha_solved = 'Not Detected captcha'
+            Validate_Form = has_valid_form_element(form_fields)
             BLOCKING_KEYWORDS = [
                 "Attention Required! | Cloudflare",
                 "Access denied",
@@ -670,8 +693,40 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     'form_url': form_data['form_url']
                 }
                 return result
+            if 'franchise' in page_source_lower or 'franchising' in page_source_lower or 'franchises' in page_source_lower or 'franchisor' in page_source_lower:
+                update_aws_job_metadata(
+                    job['id'],
+                    status="FAILED",
+                    completed=True,
+                    job=job,
+                    ERROR="Franchise Word Detected: "
+                )
+                result = {
+                    'success': False,
+                    'submission_time': datetime.now(),
+                    'error': 'Form Not found',
+                    'response_page': driver.page_source[:1000],  # First 1000 chars
+                    'form_url': form_data['form_url']
+                }
+                return result
 
-            if not elements and not main_field2 and not main_field:
+            if 'href="/lander"' in page_source_lower or '<html' not in page_source_lower or 'LANDER_SYSTEM' in page_source_lower or "/lander" in page_source_lower or "error-page" in page_source_lower or "page not found" in page_source_lower or "site not found" in page_source_lower or "domain parked" in page_source_lower or "this domain is parked" in page_source_lower or "buy this domain" in page_source_lower or "suspendisse" in page_source_lower or 'currently unavailable' in page_source_lower or 'this domain is for sale' in page_source_lower or 'domain for sale' in page_source_lower or 'website suspended' in page_source_lower or 'website is suspended' in page_source_lower or 'is parked free' in page_source_lower or 'this domain has been registered' in page_source_lower or 'this domain is registered' in page_source_lower:
+                update_aws_job_metadata(
+                    job['id'],
+                    status="FAILED",
+                    completed=True,
+                    job=job,
+                    ERROR="Domain not available or redirected."
+                )
+                result = {
+                    'success': False,
+                    'submission_time': datetime.now(),
+                    'error': 'Form Not found',
+                    'response_page': driver.page_source[:1000],  # First 1000 chars
+                    'form_url': form_data['form_url']
+                }
+                return result
+            if (not elements and not main_field2 and not main_field) or not Validate_Form:
                 result = {
                     'success': False,
                     'submission_time': datetime.now(),
@@ -681,16 +736,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 }
 
                 logger.info(f"Form Not found - - - - : {result}")
-                submission_time = datetime.utcnow()
-                if 'Attention Required! | Cloudflare' in driver.page_source:
-                    update_aws_job_metadata(
-                        job['id'],
-                        status="FAILED",
-                        completed=True, job=job,ERROR='Attention Required! | Cloudflare'
-                    )
-                    # mark_failed(job['id'], 'Attention Required! | Cloudflare')
-
-                    return result
+                
                 if contact_id:
                     # update_contact_status(contact_id, 'FORM NOT FOUND','FORM NOT FOUND', submission_time)
                     update_aws_job_metadata(
@@ -845,6 +891,10 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                                 placeholder = (elem.get_attribute("placeholder") or "").lower()
                                 if 'last' in placeholder.lower():
                                     elem.send_keys(str(data['lname']))
+                                elif typ == 'email':
+                                    elem.send_keys(str(data['email']))
+                                elif typ == 'tel':
+                                    elem.send_keys(str(data['phone']))
                                 elif any(word.lower() in placeholder.lower() for word in FIELD_KEYWORDS['phone']):
                                     elem.send_keys(str(data['phone']))
 
@@ -871,6 +921,27 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     except Exception as e:
                         out["notes"].append(f"couldn't fill {guess}: {e}")
 
+            #todo after all loop if no element filled then do not found
+            if not out.get('filled'):
+                result = {
+                    'success': False,
+                    'submission_time': datetime.now(),
+                    'error': 'Form Not found',
+                    'response_page': driver.page_source[:1000],  # First 1000 chars
+                    'form_url': form_data['form_url']
+                }
+
+                logger.info(f"Form Not found - - - - : {result}")
+                submission_time = datetime.utcnow()
+                if contact_id:
+                    # update_contact_status(contact_id, 'FORM NOT FOUND','FORM NOT FOUND', submission_time)
+                    update_aws_job_metadata(
+                        job['id'],
+                        status="FORM NOT FOUND",
+                        completed=True, job=job
+                    )
+
+                return result
             # Try to fill common DOB / date fields and other custom widgets before main mapping
             try:
                 # Quick helper to safely click/send keys
@@ -1264,6 +1335,14 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                             submit_buttons = driver.find_elements(By.XPATH,
                                                                   "//button[@type='submit' or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'send') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), 'submit')]")
                             time.sleep(0.5)
+                            if not submit_buttons:
+                                driver.find_element(By.XPATH, "//a[normalize-space()='Send']").click()
+                            else:
+                                for button in submit_buttons:
+                                    try:
+                                        button.click()
+                                    except:
+                                        pass
                             logger.info(f"submit_buttons 2  - -- -Form submitted successfully {form_data['form_url']}")
 
                     except:
