@@ -137,6 +137,8 @@ def find_best_key_for_element(driver, elem):
     combined = attr_texts(elem)
     label_text = text_of_label_for(driver, elem)
     combined = (combined + " " + label_text).lower()
+    if 'quoteforms' in combined.lower():
+        return 'quoteForms'
     for key, kws in FIELD_KEYWORDS.items():
         if matches_keywords(label_text, kws):
             return key
@@ -736,7 +738,7 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                 }
 
                 logger.info(f"Form Not found - - - - : {result}")
-                
+
                 if contact_id:
                     # update_contact_status(contact_id, 'FORM NOT FOUND','FORM NOT FOUND', submission_time)
                     update_aws_job_metadata(
@@ -771,6 +773,8 @@ def submit_contact_form_old(form_data: Dict[str, Any], generated_message: str,jo
                     continue
 
                 key = find_best_key_for_element(driver, elem)
+                if 'quoteForms' in key:
+                    continue
 
                 # --- file upload ---
                 if tag == "input" and typ == "file":
